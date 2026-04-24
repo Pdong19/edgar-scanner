@@ -163,6 +163,41 @@ Customer validation: 63 of top 75 mentioned in other 10-Ks
 Deep-dive verdicts: 4 PASS, 29 WATCHLIST, 67 KILL
 ```
 
+## Customization
+
+All thresholds, keywords, and scoring weights live in [`config.py`](src/sec_filing_intelligence/config.py) (800 lines). No code changes needed to customize the scanner for your own use case.
+
+**Add moat keywords** — append to the `DISCOVERY_HARD_KEYWORDS` or `DISCOVERY_SOFT_KEYWORDS` lists:
+```python
+DISCOVERY_HARD_KEYWORDS = [
+    "sole source",
+    "only provider",
+    "your new keyword here",  # just add a string
+]
+```
+
+**Map keywords to moat types** — add to `DISCOVERY_KEYWORD_MOAT_MAP`:
+```python
+DISCOVERY_KEYWORD_MOAT_MAP = {
+    "your new keyword here": ["technology", "supply_chain"],
+}
+```
+
+**Change scoring thresholds** — adjust the AMPX screener gates:
+```python
+AMPX_MIN_MARKET_CAP_M = 30       # raise/lower the market cap floor
+AMPX_MAX_MARKET_CAP_M = 500      # expand to mid-caps
+AMPX_MIN_CRASH_52W_PCT = -60     # require deeper crash
+```
+
+**Target different sectors** — edit `AMPX_PRIORITY_INDUSTRIES`:
+```python
+AMPX_PRIORITY_INDUSTRIES = (
+    "semiconductor", "nuclear", "quantum",
+    "your sector here",
+)
+```
+
 ## How It Works
 
 ### EFTS Discovery Pipeline (6 phases)
