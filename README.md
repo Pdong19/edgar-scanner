@@ -111,6 +111,26 @@ python -m sec_filing_intelligence.form4_rss_poller --poll
 python -m sec_filing_intelligence.xbrl_fundamentals --refresh
 ```
 
+## Output
+
+Each module produces output in **three places**:
+
+| Output | Location | Description |
+|--------|----------|-------------|
+| **Terminal** | stdout/stderr | Scan progress and summary report print directly to your terminal |
+| **CSV files** | `output/` directory | Full scored results with all dimensions (machine-readable) |
+| **Database** | `data/sec_filings.db` | All results persisted to SQLite for querying and historical tracking |
+
+After a scan, you can query results directly:
+
+```bash
+# View top scorers from the database
+sqlite3 data/sec_filings.db "SELECT ticker, score FROM scr_ampx_rules_scores ORDER BY score DESC LIMIT 10"
+
+# View latest discovery flags
+sqlite3 data/sec_filings.db "SELECT ticker, composite_score, moat_types FROM scr_discovery_flags ORDER BY composite_score DESC LIMIT 10"
+```
+
 ## Sample Output
 
 **AMPX Screener** — scores 2,600+ tickers through a funnel, then ranks survivors on 11 dimensions:
