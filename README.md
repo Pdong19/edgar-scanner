@@ -1,38 +1,52 @@
 # SEC Filing Intelligence
 
+[![Tests](https://github.com/Pdong19/sec-filing-intelligence/actions/workflows/tests.yml/badge.svg)](https://github.com/Pdong19/sec-filing-intelligence/actions)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 Autonomous pipeline that extracts investment signals from SEC EDGAR filings. Searches every 10-K for monopoly language, scores companies on 11 quantitative dimensions, tracks insider buying in real-time, and validates claims against federal contract records.
 
-Built to find undiscovered small-cap companies with structural competitive advantages before the market does.
+Built to find undiscovered small-cap companies with structural competitive advantages — before the market does.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    SEC Filing Intelligence                          │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  │
-│  │  EFTS Discovery   │  │  AMPX Screener   │  │  Forward Moat    │  │
-│  │                   │  │                   │  │                   │  │
-│  │ Full-text search  │  │ 11-dim threshold  │  │ Trajectory signal │  │
-│  │ across ALL 10-Ks  │  │ scoring engine    │  │ detection from    │  │
-│  │ for 120 moat      │  │ with going-       │  │ backlog, capex,   │  │
-│  │ keywords          │  │ concern kill      │  │ partnerships      │  │
-│  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘  │
-│           │                      │                      │            │
-│  ┌────────┴─────────┐  ┌────────┴─────────┐  ┌────────┴─────────┐  │
-│  │  Deep Dive        │  │  XBRL Extractor  │  │  Form 4 Poller   │  │
-│  │                   │  │                   │  │                   │  │
-│  │ 12-module verdict │  │ Machine-readable  │  │ Real-time SEC     │  │
-│  │ framework with    │  │ financials from   │  │ atom feed for     │  │
-│  │ analog DNA match  │  │ SEC XBRL data     │  │ insider buying    │  │
-│  └───────────────────┘  └───────────────────┘  └───────────────────┘  │
-│                                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │                    SQLite + SEC EDGAR APIs                    │   │
-│  │  34 tables │ WAL mode │ auto-migration │ EFTS + XBRL + RSS  │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph Discovery ["Discovery Layer"]
+        EFTS["EFTS Search<br/><i>120 moat keywords across<br/>all SEC 10-K filings</i>"]
+        FM["Forward Moat<br/><i>Backlog, partnerships,<br/>capex inflection</i>"]
+    end
+
+    subgraph Scoring ["Scoring Layer"]
+        AMPX["AMPX Screener<br/><i>11-dimension threshold<br/>scoring engine</i>"]
+        DD["Deep Dive<br/><i>12-module analysis with<br/>PASS / WATCHLIST / KILL</i>"]
+    end
+
+    subgraph Data ["Data Layer"]
+        XBRL["XBRL Extractor<br/><i>Machine-readable financials<br/>from SEC filings</i>"]
+        F4["Form 4 Poller<br/><i>Real-time insider buying<br/>from SEC atom feed</i>"]
+        YF["yfinance<br/><i>Price metrics, float,<br/>short interest</i>"]
+    end
+
+    subgraph Validation ["Validation Layer"]
+        GOV["USAspending.gov<br/><i>Federal contract<br/>verification</i>"]
+        XVAL["10-K Cross-Validation<br/><i>Customer filing<br/>mentions</i>"]
+    end
+
+    DB[("SQLite<br/>35 tables · WAL mode<br/>Auto-migration")]
+
+    EFTS --> DD
+    FM --> DD
+    AMPX --> DD
+    GOV --> EFTS
+    XVAL --> EFTS
+    XBRL --> DB
+    F4 --> DB
+    YF --> DB
+    AMPX --> DB
+    DD --> DB
+    EFTS --> DB
+    FM --> DB
 ```
 
 ## Key Engineering Decisions
@@ -52,14 +66,14 @@ Built to find undiscovered small-cap companies with structural competitive advan
 | **EFTS Discovery** | Searches all SEC 10-K filings for 120 moat keywords across 10 moat types, validates against federal contracts and customer filings | `python -m sec_filing_intelligence.discovery --run` |
 | **AMPX Screener** | 11-dimension threshold scorer: crash depth, revenue growth, debt, runway, float, institutional ownership, analyst coverage, sector, short interest, options, insider buying | `python -m sec_filing_intelligence.ampx_rules --run` |
 | **Forward Moat** | Detects companies *building* moats via backlog acceleration, partnership mismatches, capex inflection, technology milestones | `python -m sec_filing_intelligence.forward_moat --run` |
-| **Deep Dive** | 12-module automated analysis: moat scoring (0-25), analog DNA matching, balance sheet, insider forensics, phase assessment, expected value estimation | `python -m sec_filing_intelligence.deep_dive --run` |
+| **Deep Dive** | 12-module automated analysis: moat scoring (0-25), analog DNA matching, balance sheet, insider forensics, expected value estimation | `python -m sec_filing_intelligence.deep_dive --run` |
 | **XBRL Extractor** | Replaces unreliable yfinance data with machine-readable SEC XBRL financials (revenue, debt, shares outstanding, cash flow) | `python -m sec_filing_intelligence.xbrl_fundamentals --refresh` |
-| **Form 4 Poller** | Real-time SEC atom feed parser for insider buying. Detects clusters (2+ insiders buying within 30 days) as a signal | `python -m sec_filing_intelligence.form4_poller --poll` |
+| **Form 4 Poller** | Real-time SEC atom feed parser for insider buying. Detects clusters (2+ insiders buying within 30 days) | `python -m sec_filing_intelligence.form4_rss_poller --poll` |
 
-## Setup
+## Quick Start
 
 ```bash
-git clone https://github.com/yourusername/sec-filing-intelligence.git
+git clone https://github.com/Pdong19/sec-filing-intelligence.git
 cd sec-filing-intelligence
 
 python -m venv venv
@@ -67,32 +81,39 @@ source venv/bin/activate
 pip install -e ".[dev]"
 
 cp .env.example .env
-# Edit .env — SEC requires a User-Agent with contact info
+# Edit .env with your contact email (SEC fair-access policy requires it)
 ```
+
+All APIs used are **free and public** — SEC EDGAR, USAspending.gov, yfinance. No paid API keys required.
 
 ## Usage
 
 ```bash
+# Search SEC filings for moat language
+python examples/search_sec_filings.py "sole source"
+
+# Score a single ticker across 11 dimensions
+python examples/score_single_ticker.py ASTS
+
 # Run the full EFTS discovery scan (searches all SEC 10-Ks)
 python -m sec_filing_intelligence.discovery --run
 
-# Score the universe with the 11-dimension AMPX screener
+# Score the entire universe with the AMPX screener
 python -m sec_filing_intelligence.ampx_rules --run
 
-# Check a single ticker's score breakdown
-python -m sec_filing_intelligence.ampx_rules --rescore ASTS
-
-# Scan for forward moat signals (backlog, partnerships, milestones)
+# Scan for forward moat signals
 python -m sec_filing_intelligence.forward_moat --run
 
 # Poll SEC for latest insider transactions
-python -m sec_filing_intelligence.form4_poller --poll
+python -m sec_filing_intelligence.form4_rss_poller --poll
 
 # Refresh XBRL fundamentals from SEC filings
 python -m sec_filing_intelligence.xbrl_fundamentals --refresh
 ```
 
-## Sample Output (AMPX Screener)
+## Sample Output
+
+**AMPX Screener** — scores 2,600+ tickers through a funnel, then ranks survivors on 11 dimensions:
 
 ```
 AMPX Rules Screener — 2026-04-17
@@ -101,26 +122,31 @@ AMPX Rules Screener — 2026-04-17
 Funnel: 2,651 universe → 1,847 w/fundamentals → 187 survivors
 
 Top 15 by score:
- #1  RCAT   9.0/12.5  CRASH:2.0 REV:2.0 DEBT:1.0 RUN:1.5 FLT:1.0 INST:1.0 ANLY:0.5 PRI:0.0 SHT:0.0 OPT:0.0 INS:0.0
- #2  AEHR   8.5/12.5  CRASH:2.0 REV:1.0 DEBT:1.0 RUN:1.5 FLT:1.0 INST:0.5 ANLY:0.5 PRI:1.0 SHT:0.0 OPT:0.5 INS:0.0
- #3  BKSY   8.0/12.5  CRASH:2.0 REV:2.0 DEBT:1.0 RUN:0.75 FLT:1.0 INST:0.0 ANLY:0.0 PRI:1.0 SHT:0.0 OPT:0.25 INS:0.0
- ...
+ #1  RCAT   9.0/12.5  CRASH:2.0 REV:2.0 DEBT:1.0 RUN:1.5 FLT:1.0 INST:1.0 ANLY:0.5
+ #2  AEHR   8.5/12.5  CRASH:2.0 REV:1.0 DEBT:1.0 RUN:1.5 FLT:1.0 INST:0.5 ANLY:0.5 PRI:1.0
+ #3  BKSY   8.0/12.5  CRASH:2.0 REV:2.0 DEBT:1.0 RUN:0.75 FLT:1.0 PRI:1.0
 
-Going-concern kills: 12 tickers (MULN, WKHS, ...)
-
+Going-concern kills: 12 tickers
 Full results: output/ampx_rules/2026-04-17.csv
 ```
 
-## Tests
+**Discovery** — searches SEC 10-K filings for companies claiming monopoly positions:
 
-```bash
-pytest tests/ -v
+```
+Discovery Scan — 2026-04-17 (Phases 1-6)
+═════════════════════════════════════════
+
+EFTS hits: 18,660 raw → 5,066 unique tickers
+USAspending: 49 of top 100 have federal contracts
+Customer validation: 63 of top 75 mentioned in other 10-Ks
+
+Deep-dive verdicts: 4 PASS, 29 WATCHLIST, 67 KILL
 ```
 
 ## How It Works
 
 ### EFTS Discovery Pipeline (6 phases)
-1. **Keyword Search** — 120 keywords across hard (sole source, only provider) and soft (proprietary technology, ITAR) layers, searched via SEC EDGAR EFTS API
+1. **Keyword Search** — 120 keywords across hard ("sole source", "only provider") and soft ("proprietary technology", "ITAR") layers, searched via SEC EDGAR EFTS API
 2. **Sector + Market Cap Scoring** — SIC code classification with sector multipliers (defense +5, pharma -3)
 3. **Fundamentals Enrichment** — Debt, revenue growth, analyst coverage adjustments
 4. **Government Validation** — USAspending.gov API confirms sole-source contracts
@@ -145,30 +171,42 @@ pytest tests/ -v
 ### 10 Moat Types Detected
 Regulatory, Technology/Patent, Infrastructure, Network/Data, Supply Chain, Government Contract, Platform, Switching Cost, Data/IP, Qualified Supplier
 
+## Testing
+
+```bash
+# Run all 216 tests
+pytest tests/ -v
+
+# Lint
+ruff check src/ tests/
+```
+
 ## Project Structure
 
 ```
 sec-filing-intelligence/
 ├── src/sec_filing_intelligence/
-│   ├── config.py            # All thresholds, keywords, scoring weights
-│   ├── db.py                # SQLite WAL wrapper + 34-table DDL
-│   ├── utils.py             # Logging, rate limiting, chunking
-│   ├── discovery.py         # EFTS full-text search engine (6 phases)
-│   ├── deep_dive.py         # 12-module automated analysis
-│   ├── filing_scanner.py    # SEC EDGAR EFTS query builder
-│   ├── ampx_rules.py        # 11-dimension threshold scorer
-│   ├── forward_moat.py      # Trajectory signal detection
-│   ├── xbrl_fundamentals.py # SEC XBRL financial extraction
-│   ├── fundamentals.py      # yfinance data refresh
-│   ├── price_analyzer.py    # ATH, 52w range, float, short interest
-│   ├── form4_parser.py      # SEC Form 4 XML transaction parser
-│   ├── form4_poller.py      # Real-time SEC atom feed poller
-│   ├── insider_tracker.py   # Insider transaction aggregation
-│   └── moat_scorer.py       # Moat classification scoring
-├── tests/                   # 9 test modules
+│   ├── config.py              # 800 lines of thresholds, keywords, scoring weights
+│   ├── db.py                  # SQLite WAL wrapper + 35-table DDL + auto-migration
+│   ├── utils.py               # Rate limiting, logging, chunking
+│   ├── discovery.py           # EFTS full-text search engine (6 phases)
+│   ├── deep_dive.py           # 12-module automated analysis framework
+│   ├── filing_scanner.py      # SEC EDGAR EFTS query builder + XML parser
+│   ├── ampx_rules.py          # 11-dimension threshold scorer
+│   ├── forward_moat.py        # Trajectory signal detection
+│   ├── xbrl_fundamentals.py   # SEC XBRL financial data extraction
+│   ├── fundamentals.py        # yfinance data refresh
+│   ├── price_analyzer.py      # ATH, 52w range, float, short interest
+│   ├── form4_parser.py        # SEC Form 4 XML transaction parser
+│   ├── form4_rss_poller.py    # Real-time SEC atom feed poller
+│   ├── insider_tracker.py     # Insider transaction aggregation
+│   └── moat_scorer.py         # CPC patent classification scoring
+├── tests/                     # 216 tests across 8 test modules
+├── examples/                  # Runnable example scripts
+├── .github/workflows/         # CI: tests on Python 3.10/3.11/3.12
 ├── pyproject.toml
 ├── .env.example
-└── LICENSE
+└── LICENSE (MIT)
 ```
 
 ## License
