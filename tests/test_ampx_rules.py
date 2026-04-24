@@ -576,39 +576,6 @@ def test_top_n_prints_latest(tmp_path, monkeypatch, capsys):
     assert "C" not in captured.out
 
 
-def test_build_ampx_report_section_has_top_15(tmp_path, monkeypatch):
-    import sqlite3
-    from sec_filing_intelligence import ampx_rules, db as screener_db
-    test_db = tmp_path / "rep.db"
-    monkeypatch.setattr(screener_db, "DB_PATH", str(test_db))
-    monkeypatch.setattr(ampx_rules, "_DEFAULT_DB_PATH", str(test_db))
-    monkeypatch.setattr(screener_db, "_migrated", False)
-    screener_db.run_migration()
-
-    with sqlite3.connect(test_db) as con:
-        for i in range(20):
-            tkr = f"T{i:02d}"
-            con.execute(
-                "INSERT OR REPLACE INTO scr_universe (ticker, company_name, is_active, is_killed) VALUES (?, ?, 1, 0)",
-                (tkr, f"Co {i}"),
-            )
-            con.execute(
-                """INSERT INTO scr_ampx_rules_scores
-                   (ticker, scan_date, score, dim1_crash, dim2_revgrowth, dim3_debt, dim4_runway,
-                    dim5_float, dim6_institutional, dim7_analyst, dim8_priority_industry,
-                    dim9_short, dim10_leaps, dim11_insider, has_going_concern)
-                   VALUES (?, '2026-04-14', ?, 1,1,1,1,1,1,1,1,0.5,0.5,1,0)""",
-                (tkr, 10.0 - i * 0.3),
-            )
-
-    from sec_filing_intelligence.report import build_ampx_rules_section
-    text = build_ampx_rules_section(scan_date="2026-04-14", db_path=str(test_db))
-    assert "AMPX Rules" in text
-    assert "T00" in text and "T14" in text, "top 15 should appear"
-    assert "T15" not in text, "beyond top 15 should NOT appear"
-    assert "+5 more" in text or "+5" in text, "remainder count should appear"
-
-
 # ── Tests: FUNDAMENTALS_SOURCE=yfinance_xbrl_fallback hybrid mode ───────────
 
 

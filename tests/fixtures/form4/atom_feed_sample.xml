@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Latest Filings - SEC EDGAR</title>
+  <updated>2025-04-15T14:00:00-04:00</updated>
+  <entry>
+    <title>4 - APPLE INC (0000320193) (Issuer)</title>
+    <link rel="alternate" type="text/html"
+      href="https://www.sec.gov/Archives/edgar/data/320193/000032019325000042/0000320193-25-000042-index.htm"/>
+    <summary>4 - Statement of changes in beneficial ownership</summary>
+    <updated>2025-04-15T13:55:00-04:00</updated>
+    <category term="4"/>
+    <id>urn:tag:sec.gov,2008:accession-number=0000320193-25-000042</id>
+  </entry>
+  <entry>
+    <title>4/A - APPLE INC (0000320193) (Issuer)</title>
+    <link rel="alternate" type="text/html"
+      href="https://www.sec.gov/Archives/edgar/data/320193/000032019325000041/0000320193-25-000041-index.htm"/>
+    <updated>2025-04-15T13:50:00-04:00</updated>
+    <category term="4/A"/>
+    <id>urn:tag:sec.gov,2008:accession-number=0000320193-25-000041</id>
+  </entry>
+  <entry>
+    <title>4 - MICROSOFT CORP (0000789019) (Issuer)</title>
+    <link rel="alternate" type="text/html"
+      href="https://www.sec.gov/Archives/edgar/data/789019/000078901925000100/0000789019-25-000100-index.htm"/>
+    <updated>2025-04-15T13:45:00-04:00</updated>
+    <category term="4"/>
+    <id>urn:tag:sec.gov,2008:accession-number=0000789019-25-000100</id>
+  </entry>
+  <entry>
+    <title>4 - UNLISTED FUND LP (0009999999) (Issuer)</title>
+    <link rel="alternate" type="text/html"
+      href="https://www.sec.gov/Archives/edgar/data/9999999/000999999925000001/0009999999-25-000001-index.htm"/>
+    <updated>2025-04-15T13:40:00-04:00</updated>
+    <category term="4"/>
+    <id>urn:tag:sec.gov,2008:accession-number=0009999999-25-000001</id>
+  </entry>
+  <entry>
+    <title>4 - FOOBAR INC (0001234567) (Issuer)</title>
+    <link rel="alternate" type="text/html"
+      href="https://www.sec.gov/Archives/edgar/data/1234567/000123456725000050/0001234567-25-000050-index.htm"/>
+    <updated>2025-04-15T13:35:00-04:00</updated>
+    <category term="4"/>
+    <id>urn:tag:sec.gov,2008:accession-number=0001234567-25-000050</id>
+  </entry>
+</feed>

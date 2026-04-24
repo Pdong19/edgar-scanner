@@ -18,7 +18,9 @@ def get_logger(name: str, log_file: str = "screener.log") -> logging.Logger:
         handler = logging.StreamHandler()
         handler.setFormatter(fmt)
         logger.addHandler(handler)
-        fh = logging.FileHandler(str(LOG_DIR / log_file))
+        log_dir = Path(LOG_DIR)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        fh = logging.FileHandler(str(log_dir / log_file))
         fh.setFormatter(fmt)
         logger.addHandler(fh)
     return logger

@@ -14,18 +14,21 @@ patent_number) to prevent score inflation.
 """
 
 from .db import get_connection
-from .thesis_loader import ThesisConfig
 
 
-def score_moat(ticker: str, config: ThesisConfig) -> float:
-    """Return CPC-match moat score in [0.0, 1.0] for this ticker + thesis.
+def score_moat(ticker: str, cpc_prefixes: list[str]) -> float:
+    """Return CPC-match moat score in [0.0, 1.0] for this ticker.
+
+    Args:
+        ticker: Stock ticker symbol.
+        cpc_prefixes: CPC classification prefixes to match against (e.g., ["G21", "H01M"]).
 
     Returns 0.0 when:
     - ticker has no patents
-    - ticker has patents but none match thesis CPC prefixes
-    - thesis has no CPC prefixes (alt-signal-only thesis)
+    - ticker has patents but none match the CPC prefixes
+    - cpc_prefixes is empty
     """
-    prefixes = config.moat_scoring.cpc_prefixes
+    prefixes = cpc_prefixes
     if not prefixes:
         return 0.0
 

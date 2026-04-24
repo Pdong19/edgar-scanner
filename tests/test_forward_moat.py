@@ -2,13 +2,32 @@
 
 import sqlite3
 import pytest
-from sec_filing_intelligence.db import get_connection, run_migration
+from contextlib import contextmanager
+import sec_filing_intelligence.db as db_mod
+import sec_filing_intelligence.forward_moat as fm_mod
+
+
+@pytest.fixture(autouse=True)
+def _in_memory_db(monkeypatch):
+    con = sqlite3.connect(":memory:", check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA foreign_keys=ON")
+
+    @contextmanager
+    def mock_conn():
+        yield con
+
+    monkeypatch.setattr(db_mod, "get_connection", mock_conn)
+    monkeypatch.setattr(fm_mod, "get_connection", mock_conn)
+    monkeypatch.setattr(db_mod, "_migrated", False)
+    yield con
+    con.close()
 
 
 def test_forward_moat_tables_exist():
     """Verify scr_forward_moat_scores and scr_forward_moat_history tables are created."""
-    run_migration()
-    with get_connection() as conn:
+    db_mod.run_migration()
+    with db_mod.get_connection() as conn:
         tables = {r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'scr_forward%'"
         ).fetchall()}
@@ -18,8 +37,8 @@ def test_forward_moat_tables_exist():
 
 def test_forward_moat_scores_columns():
     """Verify scr_forward_moat_scores has all required columns."""
-    run_migration()
-    with get_connection() as conn:
+    db_mod.run_migration()
+    with db_mod.get_connection() as conn:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(scr_forward_moat_scores)").fetchall()}
     required = {
         "ticker", "scan_date", "sig_backlog", "sig_segment_crossover",
@@ -297,7 +316,7 @@ class TestComputeForwardScore:
 class TestWriteForwardScores:
     def test_write_and_read(self):
         """Insert a row, query it back, verify forward_score matches."""
-        run_migration()
+        db_mod.run_migration()
         row = {
             "ticker": "TEST123",
             "scan_date": "2026-04-22",
@@ -323,7 +342,7 @@ class TestWriteForwardScores:
         count = write_forward_scores([row])
         assert count == 1
 
-        with get_connection() as conn:
+        with db_mod.get_connection() as conn:
             result = conn.execute(
                 "SELECT forward_score, sig_backlog, partnership_names FROM scr_forward_moat_scores WHERE ticker = 'TEST123'"
             ).fetchone()
@@ -342,10 +361,10 @@ from sec_filing_intelligence.forward_moat import run_forward_scan
 class TestOrchestrator:
     def test_orchestrator_returns_summary(self):
         """Mock batch EFTS + all 6 _fetch_*_signal functions, insert a fake discovery row, verify result."""
-        run_migration()
+        db_mod.run_migration()
 
         # Insert a fake discovery candidate
-        with get_connection() as conn:
+        with db_mod.get_connection() as conn:
             # Ensure the table has the right columns by trying to insert
             conn.execute(
                 """INSERT OR REPLACE INTO scr_discovery_flags

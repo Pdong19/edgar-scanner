@@ -103,6 +103,33 @@ def run_migration():
         if "cik" not in uni_cols_now:
             conn.execute("ALTER TABLE scr_universe ADD COLUMN cik TEXT")
 
+        # --- scr_universe column migration (market_cap, avg_volume) ---
+        # ampx_rules.py queries u.market_cap and u.avg_volume but the old DDL
+        # only had market_cap_m. Add both columns if they don't exist yet.
+        uni_cols_now = {r[1] for r in conn.execute("PRAGMA table_info(scr_universe)").fetchall()}
+        if "market_cap" not in uni_cols_now:
+            conn.execute("ALTER TABLE scr_universe ADD COLUMN market_cap REAL")
+        if "avg_volume" not in uni_cols_now:
+            conn.execute("ALTER TABLE scr_universe ADD COLUMN avg_volume REAL")
+
+        # --- scr_fundamentals column migration ---
+        # fundamentals.py UPSERT writes columns that the old DDL didn't declare.
+        # Add them so existing DBs don't break on INSERT.
+        fund_cols = {r[1] for r in conn.execute("PRAGMA table_info(scr_fundamentals)").fetchall()}
+        _new_fund_cols = {
+            "revenue_quarterly": "REAL",
+            "market_cap": "REAL",
+            "institutional_ownership": "REAL",
+            "fcf_growth_yoy": "REAL",
+            "current_ratio": "REAL",
+            "roe": "REAL",
+            "data_source": "TEXT DEFAULT 'yfinance'",
+            "raw_json": "TEXT",
+        }
+        for col_name, col_def in _new_fund_cols.items():
+            if col_name not in fund_cols:
+                conn.execute(f"ALTER TABLE scr_fundamentals ADD COLUMN {col_name} {col_def}")
+
         # Legacy accession backfill from sec_url. Match the NNNNNNNNNN-NN-NNNNNN format.
         # Example sec_url: .../Archives/edgar/data/320193/000032019325000001/0000320193-25-000001-index.htm
         # Extract the hyphenated accession: 0000320193-25-000001.
@@ -213,6 +240,8 @@ CREATE TABLE IF NOT EXISTS scr_universe (
     sector TEXT,
     industry TEXT,
     market_cap_m REAL,
+    market_cap REAL,
+    avg_volume REAL,
     ipo_date TEXT,
     is_spac INTEGER DEFAULT 0,
     is_former_spac INTEGER DEFAULT 0,
@@ -232,6 +261,7 @@ CREATE TABLE IF NOT EXISTS scr_fundamentals (
     date TEXT NOT NULL,
     revenue_ttm REAL,
     revenue_prev_year REAL,
+    revenue_quarterly REAL,
     revenue_growth_yoy REAL,
     revenue_growth_qoq REAL,
     gross_margin REAL,
@@ -242,11 +272,18 @@ CREATE TABLE IF NOT EXISTS scr_fundamentals (
     debt_to_equity REAL,
     shares_outstanding REAL,
     institutional_ownership_pct REAL,
+    institutional_ownership REAL,
+    market_cap REAL,
     quarterly_burn_rate REAL,
     cash_runway_quarters REAL,
     free_cash_flow REAL,
+    fcf_growth_yoy REAL,
+    current_ratio REAL,
+    roe REAL,
     capex_to_revenue REAL,
     rd_to_revenue REAL,
+    data_source TEXT DEFAULT 'yfinance',
+    raw_json TEXT,
     last_updated TEXT,
     UNIQUE(ticker, date)
 );
@@ -709,6 +746,7 @@ CREATE TABLE IF NOT EXISTS scr_discovery_flags (
     moat_types TEXT,
     moat_type_count INTEGER DEFAULT 0,
     composite_score REAL DEFAULT 0,
+    sector TEXT,
     rank INTEGER,
     PRIMARY KEY (ticker, scan_date)
 );

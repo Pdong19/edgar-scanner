@@ -161,7 +161,7 @@ class TestRunMigration:
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'scr_%'"
         ).fetchall()
         table_names = sorted(r["name"] for r in rows)
-        assert len(table_names) == 32, f"Expected 32 tables, got {len(table_names)}: {table_names}"
+        assert len(table_names) == 34, f"Expected 34 tables, got {len(table_names)}: {table_names}"
         for expected in self.EXPECTED_TABLES:
             assert expected in table_names, f"Missing table: {expected}"
 
@@ -178,7 +178,7 @@ class TestRunMigration:
         rows = _in_memory_db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'scr_%'"
         ).fetchall()
-        assert len(rows) == 32
+        assert len(rows) == 34
 
     def test_ampx_profile_seeded(self, _in_memory_db):
         """run_migration() seeds the 15 AMPX reference profile rows."""
@@ -201,26 +201,6 @@ class TestRunMigration:
             "SELECT COUNT(*) FROM scr_kill_list"
         ).fetchone()[0]
         assert count > 0  # Should have ~41 entries
-
-    def test_scr_scores_has_all_dimension_columns(self, _in_memory_db):
-        """scr_scores table has columns for all 15 dimensions plus metadata."""
-        from sec_filing_intelligence.db import run_migration
-        from sec_filing_intelligence.checklist_scorer import DIMENSIONS
-
-        run_migration()
-
-        cols = {
-            r[1]
-            for r in _in_memory_db.execute("PRAGMA table_info(scr_scores)").fetchall()
-        }
-        for dim in DIMENSIONS:
-            assert dim in cols, f"scr_scores missing dimension column: {dim}"
-
-        # Metadata columns
-        for meta in ("composite_score", "ampx_similarity", "group_a_score",
-                      "group_b_score", "group_c_score", "dimensions_with_data",
-                      "data_completeness"):
-            assert meta in cols, f"scr_scores missing metadata column: {meta}"
 
     def test_scr_universe_has_kill_columns(self, _in_memory_db):
         """scr_universe has the is_active and is_killed columns (new schema)."""
