@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sec-filing-intelligence"
+name = "edgar-scanner"
 version = "0.1.0"
 description = "Autonomous SEC filing scanner that extracts investment signals from EDGAR full-text search, XBRL financials, Form 4 insider transactions, and 10-K moat language."
 readme = "README.md"

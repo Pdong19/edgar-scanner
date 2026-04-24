@@ -1,6 +1,6 @@
 # SEC Filing Intelligence
 
-[![Tests](https://github.com/Pdong19/sec-filing-intelligence/actions/workflows/tests.yml/badge.svg)](https://github.com/Pdong19/sec-filing-intelligence/actions)
+[![Tests](https://github.com/Pdong19/edgar-scanner/actions/workflows/tests.yml/badge.svg)](https://github.com/Pdong19/edgar-scanner/actions)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -73,8 +73,8 @@ graph TB
 ## Quick Start
 
 ```bash
-git clone https://github.com/Pdong19/sec-filing-intelligence.git
-cd sec-filing-intelligence
+git clone https://github.com/Pdong19/edgar-scanner.git
+cd edgar-scanner
 
 python -m venv venv
 source venv/bin/activate
