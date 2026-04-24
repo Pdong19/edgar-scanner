@@ -33,9 +33,6 @@ from .config import (
 )
 from .db import get_active_tickers, get_connection
 from .form4_parser import (
-    cik_to_ticker,
-    extract_accession_from_sec_url,
-    is_amendment,
     parse_form4_xml,
     ticker_to_cik,
 )
@@ -126,7 +123,7 @@ def _sec_xml(url: str) -> ET.Element | None:
         return None
     try:
         return ET.fromstring(resp.content)
-    except ET.ParseError as e:
+    except ET.ParseError:
         logger.exception("Failed to parse XML from %s", url)
         return None
 
@@ -501,7 +498,7 @@ def refresh_all(lookback_days: int = 90) -> dict:
             total_inserted += inserted
             if (i + 1) % 25 == 0:
                 logger.info("Progress: %d/%d tickers processed", i + 1, len(tickers))
-        except Exception as e:
+        except Exception:
             logger.exception("Error processing %s", ticker)
             errors += 1
 
@@ -702,7 +699,7 @@ def main():
         ]
         print(f"Backfilling {len(tickers)} tickers from {tickers_file}...")
         result = refresh_from_list(tickers, lookback_days=args.days)
-        print(f"\nBackfill complete:")
+        print("\nBackfill complete:")
         for k, v in result.items():
             print(f"  {k}: {v}")
 

@@ -14,16 +14,14 @@ CLI:
 import argparse
 import csv
 import re
-import sys
 import time
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 import requests
 
 from .config import (
-    DB_PATH,
     EDGAR_FULL_TEXT_SEARCH_URL,
     EDGAR_RATE_LIMIT_RPS,
     EDGAR_REQUEST_TIMEOUT,
@@ -34,9 +32,6 @@ from .config import (
     FORWARD_CAPEX_ATH_CRASH_MIN,
     FORWARD_CAPEX_GROWTH_MIN,
     FORWARD_MILESTONE_KEYWORDS,
-    FORWARD_MOAT_DEEPDIVE_TOP_N,
-    FORWARD_MOAT_MIN_SCORE_DEEPDIVE,
-    FORWARD_MOAT_MIN_SIGNAL_SCORE,
     FORWARD_MOAT_OUTPUT_DIR,
     FORWARD_MOAT_MAX_MARKET_CAP,
     FORWARD_MOAT_SCAN_TOP_N,
@@ -45,18 +40,14 @@ from .config import (
     FORWARD_PARTNERSHIP_EXCLUDE_INSTITUTIONAL,
     FORWARD_PARTNERSHIP_FORTUNE_200,
     FORWARD_PARTNERSHIP_KEYWORDS,
-    FORWARD_PARTNERSHIP_MISMATCH_RATIO,
     FORWARD_TAM_KEYWORDS,
-    FORWARD_DEEPDIVE_MIN_RUNWAY_Q,
-    FORWARD_DEEPDIVE_MAX_DILUTION_PCT,
     TABLE_DEEP_DIVE_RESULTS,
     TABLE_DISCOVERY_FLAGS,
-    TABLE_FORWARD_MOAT_HISTORY,
     TABLE_FORWARD_MOAT_SCORES,
     TABLE_KILL_LIST,
 )
 from .db import get_connection, run_migration
-from .filing_scanner import _cik_to_ticker_lookup, _load_cik_maps, _ticker_to_cik
+from .filing_scanner import _cik_to_ticker_lookup, _load_cik_maps
 from .utils import get_logger, rate_limiter
 
 logger = get_logger("forward_moat", "screener_forward_moat.log")

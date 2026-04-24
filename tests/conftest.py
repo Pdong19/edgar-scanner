@@ -3,7 +3,6 @@
 import os
 import tempfile
 
-import pytest
 
 # Point DB to a temp file before any module imports config.DB_PATH
 _tmp_dir = tempfile.mkdtemp()

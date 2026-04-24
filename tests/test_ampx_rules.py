@@ -1,7 +1,6 @@
 """Tests for the AMPX rules screener."""
 import sqlite3
 import pytest
-from pathlib import Path
 
 from sec_filing_intelligence import db as screener_db
 from sec_filing_intelligence.config import (
@@ -109,7 +108,8 @@ def test_ampx_rules_module_importable():
 
 
 def test_ampx_rules_cli_help_exits_zero():
-    import subprocess, sys
+    import subprocess
+    import sys
     result = subprocess.run(
         [sys.executable, "-m", "sec_filing_intelligence.ampx_rules", "--help"],
         capture_output=True, text=True, timeout=15,

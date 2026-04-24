@@ -24,7 +24,6 @@ from .utils import get_logger
 logger = get_logger("ampx_rules")
 
 from .config import (
-    AMPX_DILUTION_DRAG_PCT,
     AMPX_DILUTION_TIER_HEAVY_PCT,
     AMPX_DILUTION_TIER_MILD_PCT,
     AMPX_DILUTION_TIER_MODERATE_PCT,

@@ -4,14 +4,11 @@ import json
 import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 from sec_filing_intelligence import db as screener_db
 from sec_filing_intelligence import discovery as discovery_mod
 from sec_filing_intelligence.config import (
-    DISCOVERY_CONTEXT_MDA_BONUS,
     DISCOVERY_CONTEXT_RISK_FACTOR_PENALTY,
     DISCOVERY_CONTEXT_SELF_CLAIM_BONUS,
     DISCOVERY_HISTORY_NEW_TICKER_BONUS,
@@ -29,13 +26,11 @@ from sec_filing_intelligence.discovery import (
     _compute_diamond_score,
     _enrich_flags,
     _ensure_phase2_columns,
-    _format_delta_report,
     _format_scan_report,
     _parse_discovery_hits,
     _score_flags,
     _store_discovery_flags,
     _store_history_snapshot,
-    _store_moat_signals,
     _store_text_search_hits,
     _write_csv,
     get_latest_results,
@@ -952,7 +947,7 @@ def test_compute_deltas_with_previous(tmp_path, monkeypatch):
     assert flags["AAA"]["is_new_ticker"] is False
 
     # BBB lost -5.0 (<= -threshold of -3.0)
-    losers = {l["ticker"]: l for l in deltas["biggest_losers"]}
+    losers = {entry["ticker"]: entry for entry in deltas["biggest_losers"]}
     assert "BBB" in losers
     assert abs(losers["BBB"]["delta"] - (-5.0)) < 0.01
     assert flags["BBB"]["score_delta"] == -5.0

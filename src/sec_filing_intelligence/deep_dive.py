@@ -15,11 +15,10 @@ import argparse
 import csv
 import json
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 from .config import (
-    DB_PATH,
     DEEP_DIVE_ANALOG_STRONG,
     DEEP_DIVE_ANALOG_WEAK,
     DEEP_DIVE_MOAT_GATE,
@@ -282,7 +281,7 @@ def _score_moat(data: dict) -> dict:
 
     Returns dict with total score, sub-scores, pass/fail, and evidence.
     """
-    keywords_lower = (data.get("keywords_matched") or "").lower()
+    _ = (data.get("keywords_matched") or "").lower()  # reserved for future use
     moat_types = (data.get("moat_types") or "").lower()
     keyword_hits = data.get("keyword_hits", [])
     keyword_set = {h["keyword"].lower() for h in keyword_hits}
@@ -388,7 +387,7 @@ def _score_analogs(data: dict) -> dict:
 
     Returns dict with per-analog scores and best match info.
     """
-    keywords_lower = (data.get("keywords_matched") or "").lower()
+    _ = (data.get("keywords_matched") or "").lower()  # reserved for future use
     moat_types = (data.get("moat_types") or "").lower()
     keyword_hits = data.get("keyword_hits", [])
     keyword_set = {h["keyword"].lower() for h in keyword_hits}

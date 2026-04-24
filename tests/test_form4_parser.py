@@ -3,7 +3,6 @@
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-import pytest
 
 FIXTURES = Path(__file__).parent / "fixtures" / "form4"
 

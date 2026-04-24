@@ -17,11 +17,9 @@ CLI:
 import argparse
 import csv
 import json
-import os
 import re
-import sys
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 import requests
@@ -85,11 +83,10 @@ from .config import (
     TABLE_DISCOVERY_FLAGS,
     TABLE_DISCOVERY_HISTORY,
     TABLE_KILL_LIST,
-    TABLE_MOAT_SIGNALS,
     TABLE_TEXT_SEARCH_HITS,
 )
 from .db import get_connection, run_migration
-from .filing_scanner import _cik_to_ticker_lookup, _extract_ticker_from_display, _load_cik_maps
+from .filing_scanner import _cik_to_ticker_lookup, _load_cik_maps
 from .utils import get_logger, rate_limiter
 
 logger = get_logger("discovery", "screener_discovery.log")
@@ -1868,7 +1865,7 @@ def _compute_deltas(flags: dict[str, dict], scan_date: str) -> dict:
 
     # Compute deltas for current tickers
     current_tickers = set(flags.keys())
-    prev_tickers = set(prev_scores.keys())
+
 
     for ticker, rec in flags.items():
         current_score = rec.get("composite_score", 0.0)
@@ -1961,9 +1958,9 @@ def _format_delta_report(deltas: dict, scan_date: str) -> str:
     losers = deltas.get("biggest_losers", [])
     if losers:
         lines.append("BIGGEST LOSERS (score decreased):")
-        for l in losers[:10]:
+        for loser in losers[:10]:
             lines.append(
-                f"  {l['ticker']:<6} | {l['delta']:.1f} (was {l['prev_score']:.1f}, now {l['current_score']:.1f})"
+                f"  {loser['ticker']:<6} | {loser['delta']:.1f} (was {loser['prev_score']:.1f}, now {loser['current_score']:.1f})"
             )
         lines.append("")
 
@@ -2612,7 +2609,7 @@ def main():
         print(f"Scan complete: {summary['total_flagged']} flagged, CSV: {csv_name}")
         if args.combined:
             from .forward_moat import run_forward_scan, merge_combined_csv
-            fwd_summary = run_forward_scan(dry_run=False)
+            run_forward_scan(dry_run=False)
             # Build moat_rows from discovery flags
             moat_rows = _get_moat_rows_for_merge()
             forward_rows = _get_forward_rows_for_merge()
@@ -2625,7 +2622,7 @@ def main():
         print(f"\nScan complete: {summary['total_flagged']} flagged, CSV: {csv_name}")
         if args.combined:
             from .forward_moat import run_forward_scan, merge_combined_csv
-            fwd_summary = run_forward_scan(dry_run=True)
+            run_forward_scan(dry_run=True)
             moat_rows = _get_moat_rows_for_merge()
             forward_rows = _get_forward_rows_for_merge()
             if moat_rows and forward_rows:

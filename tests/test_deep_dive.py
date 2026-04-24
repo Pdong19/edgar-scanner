@@ -4,21 +4,17 @@ Every test uses an in-memory SQLite database via monkeypatching so the
 production stocks.db is never touched.
 """
 
-import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import date, timedelta
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from sec_filing_intelligence import db as screener_db
 from sec_filing_intelligence.config import (
     DEEP_DIVE_ANALOG_STRONG,
-    DEEP_DIVE_ANALOG_WEAK,
     DEEP_DIVE_MOAT_GATE,
-    DEEP_DIVE_MOAT_STRONG,
     TABLE_DEEP_DIVE_RESULTS,
     TABLE_DISCOVERY_FLAGS,
 )
@@ -33,7 +29,6 @@ from sec_filing_intelligence.deep_dive import (
     _store_deep_dive_results,
     get_latest_deep_dive_results,
     run_deep_dives,
-    run_single_deep_dive,
 )
 
 
@@ -217,7 +212,7 @@ class TestDisqualifiers:
 
     def test_disqualifier_cluster_selling_kills(self):
         """3 C-suite insider sellers in 60 days -> KILL regardless of other scores."""
-        today = date.today().isoformat()
+        _today = date.today().isoformat()  # noqa: F841
         recent = (date.today() - timedelta(days=30)).isoformat()
 
         data = _make_data(

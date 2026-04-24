@@ -23,7 +23,6 @@ from datetime import datetime, timezone
 from .config import EDGAR_RATE_LIMIT_RPS, EDGAR_REQUEST_TIMEOUT, EDGAR_USER_AGENT
 from .form4_parser import (
     cik_to_ticker,
-    is_amendment,
     parse_form4_xml,
 )
 
