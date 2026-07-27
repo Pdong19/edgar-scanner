@@ -238,7 +238,7 @@ Regulatory, Regulated Non-Defense, Technology/Patent, Infrastructure, Network, D
 ## Testing
 
 ```bash
-# Run all 283 tests
+# Run all 285 tests
 pytest tests/ -v
 
 # Lint
@@ -266,7 +266,7 @@ edgar-scanner/
 │   ├── form4_rss_poller.py    # Real-time SEC atom feed poller
 │   ├── insider_tracker.py     # Insider transaction aggregation
 │   └── moat_scorer.py         # CPC patent classification scoring
-├── tests/                     # 283 tests across 12 test modules
+├── tests/                     # 285 tests across 12 test modules
 ├── examples/                  # Runnable example scripts + sample universe
 ├── .github/workflows/         # CI: tests on Python 3.10/3.11/3.12
 ├── pyproject.toml

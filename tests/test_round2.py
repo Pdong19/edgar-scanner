@@ -239,6 +239,29 @@ class TestForm4LineIdentity:
         assert lines == [0, 1, 2]
 
 
+# ── Standalone install: shared-table reads must degrade, not crash ──────────
+
+
+class TestStandaloneSharedTableGuards:
+    """price_history is a SHARED table from the upstream deployment; a
+    standalone install never has it. Reading it unguarded crashed the
+    documented Quick Start step (`python -m sec_filing_intelligence.price_analyzer`)."""
+
+    def test_price_analyzer_falls_back_to_yfinance(self, fresh_db):
+        from sec_filing_intelligence import price_analyzer as pa
+
+        assert pa._get_price_data_from_db("RCAT") is None  # no table → no crash
+        with patch.object(pa, "_get_price_data_from_yfinance",
+                          return_value=None) as yf_fallback:
+            assert pa.analyze_ticker("RCAT") is None
+        yf_fallback.assert_called_once()
+
+    def test_insider_score_survives_missing_price_history(self, fresh_db):
+        result = insider_tracker.score_insider_activity("RCAT")
+        assert result["score"] == 0.0
+        assert "No insider transactions" in result["reason"]
+
+
 # ── R2-3: XBRL prior-year denominator + backoff ─────────────────────────────
 
 

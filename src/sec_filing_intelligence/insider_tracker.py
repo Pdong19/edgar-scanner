@@ -326,17 +326,22 @@ def store_transactions(transactions: list[dict]) -> int:
 
 def _get_price_context(ticker: str) -> tuple[float | None, float | None]:
     """Get 52-week low and current price in a single query (read-only)."""
-    with get_connection() as conn:
-        row = conn.execute(
-            """SELECT
-                   MIN(low) as week_52_low,
-                   (SELECT close FROM price_history
-                    WHERE ticker = ? ORDER BY date DESC LIMIT 1) as current_price
-               FROM price_history
-               WHERE ticker = ?
-                 AND date >= date('now', '-252 days')""",
-            (ticker, ticker),
-        ).fetchone()
+    try:
+        with get_connection() as conn:
+            row = conn.execute(
+                """SELECT
+                       MIN(low) as week_52_low,
+                       (SELECT close FROM price_history
+                        WHERE ticker = ? ORDER BY date DESC LIMIT 1) as current_price
+                   FROM price_history
+                   WHERE ticker = ?
+                     AND date >= date('now', '-252 days')""",
+                (ticker, ticker),
+            ).fetchone()
+    except sqlite3.OperationalError:
+        # price_history is a SHARED table from the upstream deployment — a
+        # standalone install doesn't have it. Score without the 52w-low context.
+        return None, None
     if not row:
         return None, None
     return row["week_52_low"], row["current_price"]

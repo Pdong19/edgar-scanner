@@ -6,6 +6,7 @@ price_history, fetches from yfinance. Writes to scr_price_metrics (upsert on tic
 """
 
 import argparse
+import sqlite3
 import time
 
 import yfinance as yf
@@ -30,14 +31,19 @@ def _get_price_data_from_db(ticker: str) -> list[dict] | None:
 
     Returns list of dicts ordered newest first, or None if ticker not found.
     """
-    with get_connection() as conn:
-        rows = conn.execute(
-            f"""SELECT date, open, high, low, close, volume
-                FROM {SHARED_TABLE_PRICE_HISTORY}
-                WHERE ticker = ?
-                ORDER BY date DESC""",
-            (ticker,),
-        ).fetchall()
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(
+                f"""SELECT date, open, high, low, close, volume
+                    FROM {SHARED_TABLE_PRICE_HISTORY}
+                    WHERE ticker = ?
+                    ORDER BY date DESC""",
+                (ticker,),
+            ).fetchall()
+    except sqlite3.OperationalError:
+        # price_history is a SHARED table from the upstream deployment — a
+        # standalone install doesn't have it. Fall back to yfinance.
+        return None
     if not rows:
         return None
     return [dict(r) for r in rows]
