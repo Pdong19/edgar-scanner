@@ -96,10 +96,37 @@ def run_migration():
             )
         if it_cols and "amendment_accession" not in it_cols:
             conn.execute("ALTER TABLE scr_insider_transactions ADD COLUMN amendment_accession TEXT")
+        # txn_line = the transaction's ordinal within its filing (2026-07-27).
+        # Needed so the dedup identity can tell apart multiple transaction lines
+        # inside one Form 4 (price tranches, buy + grant + tax-withholding).
+        it_cols_now = {
+            r[1] for r in conn.execute("PRAGMA table_info(scr_insider_transactions)").fetchall()
+        }
+        if it_cols_now and "txn_line" not in it_cols_now:
+            conn.execute("ALTER TABLE scr_insider_transactions ADD COLUMN txn_line INTEGER")
+        # is_amendment_filing = this row came from a 4/A. Persisted so out-of-order
+        # ingestion (original arriving after its amendment) can still reconcile.
+        if it_cols_now and "is_amendment_filing" not in it_cols_now:
+            conn.execute(
+                "ALTER TABLE scr_insider_transactions ADD COLUMN is_amendment_filing INTEGER DEFAULT 0"
+            )
 
+        # --- Forward moat backlog-source labeling (2026-07-27) ---
+        fm_cols = {
+            r[1] for r in conn.execute("PRAGMA table_info(scr_forward_moat_scores)").fetchall()
+        }
+        if fm_cols and "backlog_source" not in fm_cols:
+            conn.execute("ALTER TABLE scr_forward_moat_scores ADD COLUMN backlog_source TEXT")
+
+        # Dedup identity v2 (2026-07-27): the v1 key (ticker, accession, insider,
+        # transaction_date) collapsed every extra transaction line within one
+        # Form 4 — the repo's own multi-line fixture stored 1 of 3 transactions.
+        # (accession_number, txn_line) IS the filing line. Legacy rows carry
+        # txn_line NULL; SQLite treats NULLs as distinct, so they are unaffected.
+        conn.execute("DROP INDEX IF EXISTS idx_insider_dedup")
         conn.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_insider_dedup
-              ON scr_insider_transactions (ticker, accession_number, insider_name, transaction_date)
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_insider_dedup_v2
+              ON scr_insider_transactions (accession_number, txn_line)
         """)
 
         # Ensure scr_universe.cik exists (required by form4_parser.cik_to_ticker fallback)
@@ -206,11 +233,11 @@ def run_migration():
                 "ALTER TABLE scr_insider_transactions_new RENAME TO scr_insider_transactions"
             )
 
-            # 4. Re-create idx_insider_dedup on the new table (DROP TABLE above
-            #    also removed its indexes — recreate explicitly).
+            # 4. Re-create the dedup index on the new table (DROP TABLE above
+            #    also removed its indexes — recreate explicitly, v2 identity).
             conn.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_insider_dedup
-                  ON scr_insider_transactions (ticker, accession_number, insider_name, transaction_date)
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_insider_dedup_v2
+                  ON scr_insider_transactions (accession_number, txn_line)
             """)
 
         # Seed only if empty
@@ -819,6 +846,7 @@ CREATE TABLE IF NOT EXISTS scr_forward_moat_scores (
     backlog_current TEXT,
     backlog_prior TEXT,
     backlog_growth_pct REAL,
+    backlog_source TEXT,
     partnership_names TEXT,
     partnership_verified INTEGER DEFAULT 0,
     new_tam_keywords TEXT,

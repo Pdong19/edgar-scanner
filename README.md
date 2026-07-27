@@ -18,7 +18,7 @@ graph TB
     end
 
     subgraph Scoring ["Scoring Layer"]
-        AMPX["AMPX Screener<br/><i>11-dimension threshold<br/>scoring engine</i>"]
+        AMPX["AMPX Screener<br/><i>12-dimension threshold<br/>scoring engine</i>"]
         DD["Deep Dive<br/><i>12-module analysis with<br/>PASS / WATCHLIST / KILL</i>"]
     end
 
@@ -100,7 +100,7 @@ All APIs used are **free and public** — SEC EDGAR, USAspending.gov, yfinance. 
 # Search SEC filings for moat language
 python examples/search_sec_filings.py "sole source"
 
-# Score a single ticker across 11 dimensions
+# Score a single ticker across 12 dimensions
 python examples/score_single_ticker.py ASTS
 
 # Run the full EFTS discovery scan (searches all SEC 10-Ks)
@@ -141,7 +141,7 @@ sqlite3 data/sec_filings.db "SELECT ticker, composite_score, moat_types FROM scr
 
 ## Sample Output
 
-**AMPX Screener** — scores 2,600+ tickers through a funnel, then ranks survivors on 11 dimensions:
+**AMPX Screener** — scores 2,600+ tickers through a funnel, then ranks survivors on 12 dimensions:
 
 ```
 AMPX Rules Screener — 2026-04-17
@@ -238,7 +238,7 @@ Regulatory, Regulated Non-Defense, Technology/Patent, Infrastructure, Network, D
 ## Testing
 
 ```bash
-# Run all 257 tests
+# Run all 283 tests
 pytest tests/ -v
 
 # Lint
@@ -266,7 +266,7 @@ edgar-scanner/
 │   ├── form4_rss_poller.py    # Real-time SEC atom feed poller
 │   ├── insider_tracker.py     # Insider transaction aggregation
 │   └── moat_scorer.py         # CPC patent classification scoring
-├── tests/                     # 257 tests across 11 test modules
+├── tests/                     # 283 tests across 12 test modules
 ├── examples/                  # Runnable example scripts + sample universe
 ├── .github/workflows/         # CI: tests on Python 3.10/3.11/3.12
 ├── pyproject.toml

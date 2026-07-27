@@ -55,10 +55,18 @@ C_SUITE_PATTERNS = [
     "chairman",
 ]
 
+# Titles containing these are NOT C-suite despite matching a pattern above —
+# "Vice President, Sales" was scoring as a CEO-tier buy. A chief-officer title
+# elsewhere in the string (e.g. "EVP & Chief Financial Officer") still wins.
+C_SUITE_EXCLUSIONS = ["vice president", "vice chairman", "assistant", "deputy"]
+
 # Exact abbreviation matches (checked with word boundaries)
 C_SUITE_ABBREVIATIONS = {"ceo", "cfo", "coo", "cto"}
 
 DIRECTOR_PATTERNS = ["director"]
+
+# "Managing Director" is an executive rank, not a board seat
+DIRECTOR_EXCLUSIONS = ["managing director"]
 
 
 def _ensure_schema():
@@ -141,9 +149,14 @@ def _is_c_suite(title: str | None) -> bool:
     if not title:
         return False
     lower = title.lower()
-    if any(p in lower for p in C_SUITE_PATTERNS):
-        return True
-    return any(re.search(rf'\b{abbr}\b', lower) for abbr in C_SUITE_ABBREVIATIONS)
+    has_chief_title = any(p in lower for p in C_SUITE_PATTERNS[:4]) or any(
+        re.search(rf'\b{abbr}\b', lower) for abbr in C_SUITE_ABBREVIATIONS
+    )
+    if has_chief_title:
+        return True  # an explicit chief-officer title outranks any VP prefix
+    if any(x in lower for x in C_SUITE_EXCLUSIONS):
+        return False
+    return any(p in lower for p in C_SUITE_PATTERNS)
 
 
 def _is_director(title: str | None) -> bool:
@@ -151,6 +164,8 @@ def _is_director(title: str | None) -> bool:
     if not title:
         return False
     lower = title.lower()
+    if any(x in lower for x in DIRECTOR_EXCLUSIONS):
+        return False
     return any(p in lower for p in DIRECTOR_PATTERNS)
 
 
@@ -276,8 +291,9 @@ def store_transactions(transactions: list[dict]) -> int:
                     f"""INSERT OR IGNORE INTO {TABLE_INSIDER_TRANSACTIONS}
                         (ticker, filing_date, transaction_date, insider_name, insider_title,
                          transaction_type, shares, price_per_share, total_value,
-                         ownership_after, is_open_market, source_url, accession_number)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                         ownership_after, is_open_market, source_url, accession_number,
+                         txn_line)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         txn["ticker"],
                         txn["filing_date"],
@@ -292,6 +308,7 @@ def store_transactions(transactions: list[dict]) -> int:
                         txn.get("is_open_market", 0),
                         txn.get("sec_url"),
                         txn.get("accession_number"),
+                        txn.get("txn_line"),
                     ),
                 )
                 if conn.execute("SELECT changes()").fetchone()[0] > 0:
@@ -363,14 +380,22 @@ def score_insider_activity(ticker: str) -> dict:
     sales = [r for r in rows if r["transaction_type"] == "sale"]
     open_market_buys = [r for r in purchases if r["is_open_market"]]
 
-    # Net selling → 0.0
-    if len(sales) > 0 and len(purchases) == 0:
+    # Net selling → 0.0. Actually NET the dollar values: the old "only selling"
+    # check let one token buy against fifty large sales score as bullish.
+    buy_value = sum(r["total_value"] or 0 for r in purchases)
+    sell_value = sum(r["total_value"] or 0 for r in sales)
+    if sell_value > 0 and (buy_value == 0 or sell_value >= 2 * buy_value):
         return {
             "ticker": ticker,
             "score": 0.0,
-            "reason": "Net insider selling",
+            "reason": (
+                f"Net insider selling (${sell_value:,.0f} sold vs "
+                f"${buy_value:,.0f} bought)"
+            ),
             "purchases": len(purchases),
             "sales": len(sales),
+            "buy_value": buy_value,
+            "sell_value": sell_value,
         }
 
     score = 0.0

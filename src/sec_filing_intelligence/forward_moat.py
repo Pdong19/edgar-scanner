@@ -148,14 +148,19 @@ def _sec_get(url: str) -> requests.Response | None:
     return None
 
 
-def _fetch_10k_text(ticker: str, cik: str, year: int) -> str | None:
-    """Download the first 100KB of the most recent 10-K filing for a given year.
+def _fetch_10k_text(ticker: str, cik: str, nth: int = 0) -> str | None:
+    """Download the first 100KB of the nth most recent 10-K filing (0 = latest).
+
+    Ordinal selection replaced the old fiscal-year date windows, which
+    overlapped by six months: a calendar-year filer's 10-K filed in February
+    satisfied BOTH the current-year and prior-year windows, so backlog growth
+    compared a filing against itself and always came out zero.
 
     Args:
         ticker: Ticker symbol (for logging only).
         cik: CIK string (any padding -- will be zero-padded to 10 digits).
-        year: Fiscal year to target (e.g. 2025). Searches for 10-K or 10-K/A
-              with a filing date in [year-01-01, year+1-06-30].
+        nth: 0 for the most recent original 10-K, 1 for the one before it.
+             Amendments (10-K/A) are used only when originals are scarce.
 
     Returns:
         Filing text (first 100KB) or None if no filing found.
@@ -171,7 +176,7 @@ def _fetch_10k_text(ticker: str, cik: str, year: int) -> str | None:
     except Exception:
         return None
 
-    # The recent filings are in data["filings"]["recent"]
+    # The recent filings are in data["filings"]["recent"], sorted newest-first
     recent = data.get("filings", {}).get("recent", {})
     forms = recent.get("form", [])
     dates = recent.get("filingDate", [])
@@ -181,28 +186,15 @@ def _fetch_10k_text(ticker: str, cik: str, year: int) -> str | None:
     if not forms:
         return None
 
-    # Find the best 10-K or 10-K/A for the target year
-    target_start = f"{year}-01-01"
-    target_end = f"{year + 1}-06-30"
-
-    best_idx = None
-    for i, form in enumerate(forms):
-        if form not in ("10-K", "10-K/A"):
-            continue
-        if i >= len(dates) or i >= len(accessions) or i >= len(primary_docs):
-            continue
-        filing_date = dates[i]
-        if target_start <= filing_date <= target_end:
-            # Prefer 10-K over 10-K/A, and most recent within range
-            if best_idx is None:
-                best_idx = i
-            elif forms[best_idx] == "10-K/A" and form == "10-K":
-                best_idx = i  # prefer original over amendment
-            # First match within date range is most recent (SEC sorts desc)
-            break
-
-    if best_idx is None:
+    usable = range(min(len(forms), len(dates), len(accessions), len(primary_docs)))
+    originals = [i for i in usable if forms[i] == "10-K"]
+    amendments = [i for i in usable if forms[i] == "10-K/A"]
+    # Preference-ordered distinct filings: originals first (newest-first), then
+    # amendments — so nth=0 and nth=1 can never resolve to the same filing.
+    ordered = originals + amendments
+    if len(ordered) <= nth:
         return None
+    best_idx = ordered[nth]
 
     # Build the filing document URL
     accession_raw = accessions[best_idx]
@@ -219,7 +211,7 @@ def _fetch_10k_text(ticker: str, cik: str, year: int) -> str | None:
 
     # Return first 100KB of text
     text = doc_resp.text[:_10K_TEXT_MAX_BYTES]
-    logger.debug("Fetched 10-K for %s (%s): %d chars", ticker, year, len(text))
+    logger.debug("Fetched 10-K for %s (nth=%d): %d chars", ticker, nth, len(text))
     return text
 
 
@@ -689,19 +681,21 @@ def write_forward_scores(rows: list[dict]) -> int:
     """INSERT OR REPLACE rows into scr_forward_moat_scores. Returns row count."""
     if not rows:
         return 0
+    for r in rows:
+        r.setdefault("backlog_source", None)  # column added 2026-07-27
     with get_connection() as conn:
         conn.executemany(
             f"""INSERT OR REPLACE INTO {TABLE_FORWARD_MOAT_SCORES}
                 (ticker, scan_date, sig_backlog, sig_segment_crossover,
                  sig_partnership_mismatch, sig_new_tam, sig_capex_inflection,
                  sig_tech_milestone, forward_score, backlog_current, backlog_prior,
-                 backlog_growth_pct, partnership_names, partnership_verified,
+                 backlog_growth_pct, backlog_source, partnership_names, partnership_verified,
                  new_tam_keywords, capex_growth_pct, rd_growth_pct,
                  milestone_keywords, forward_verdict, forward_verdict_reason)
                 VALUES (:ticker, :scan_date, :sig_backlog, :sig_segment_crossover,
                         :sig_partnership_mismatch, :sig_new_tam, :sig_capex_inflection,
                         :sig_tech_milestone, :forward_score, :backlog_current, :backlog_prior,
-                        :backlog_growth_pct, :partnership_names, :partnership_verified,
+                        :backlog_growth_pct, :backlog_source, :partnership_names, :partnership_verified,
                         :new_tam_keywords, :capex_growth_pct, :rd_growth_pct,
                         :milestone_keywords, :forward_verdict, :forward_verdict_reason)""",
             rows,
@@ -734,7 +728,8 @@ def _fetch_backlog_signal(
         current_hits: Pre-fetched ``{keyword: [texts]}`` for current period.
         prior_hits: Pre-fetched ``{keyword: [texts]}`` for prior period.
     """
-    _zero_meta = {"backlog_current": None, "backlog_prior": None, "backlog_growth_pct": None}
+    _zero_meta = {"backlog_current": None, "backlog_prior": None,
+                  "backlog_growth_pct": None, "backlog_source": None}
     has_current = bool(current_hits and any(current_hits.values()))
 
     if not has_current:
@@ -750,17 +745,13 @@ def _fetch_backlog_signal(
     used_10k_text = False
 
     if cik:
-        today = date.fromisoformat(scan_date)
-        current_year = today.year if today.month >= 7 else today.year - 1
-        prior_year = current_year - 1
-
-        current_text = _fetch_10k_text(ticker, cik, current_year)
+        current_text = _fetch_10k_text(ticker, cik, nth=0)
         if current_text:
             current_amount = _extract_backlog_amount(current_text)
 
-        # Only fetch prior year if current had a backlog dollar amount
+        # Only fetch the previous 10-K if the latest one had a backlog amount
         if current_amount is not None:
-            prior_text = _fetch_10k_text(ticker, cik, prior_year)
+            prior_text = _fetch_10k_text(ticker, cik, nth=1)
             if prior_text:
                 prior_amount = _extract_backlog_amount(prior_text)
             used_10k_text = True
@@ -791,7 +782,15 @@ def _fetch_backlog_signal(
         except Exception as e:
             logger.debug("yfinance revenue fallback failed for %s: %s", ticker, e)
 
-    return score_backlog(current_amount, prior_amount)
+    score, meta = score_backlog(current_amount, prior_amount)
+    # Label the source so proxy data can't masquerade as a real backlog reading
+    if used_10k_text:
+        meta["backlog_source"] = "10k_text"
+    elif current_amount is not None:
+        meta["backlog_source"] = "revenue_proxy"
+    else:
+        meta["backlog_source"] = None
+    return score, meta
 
 
 def _fetch_partnership_signal(
@@ -1277,6 +1276,7 @@ def run_forward_scan(dry_run: bool = False, scan_date: str | None = None) -> dic
             "backlog_current": str(meta_bk.get("backlog_current")) if meta_bk.get("backlog_current") else None,
             "backlog_prior": str(meta_bk.get("backlog_prior")) if meta_bk.get("backlog_prior") else None,
             "backlog_growth_pct": meta_bk.get("backlog_growth_pct"),
+            "backlog_source": meta_bk.get("backlog_source"),
             "partnership_names": meta_pr.get("partner_tickers", ""),
             "partnership_verified": 1 if meta_pr.get("partner_count", 0) > 0 else 0,
             "new_tam_keywords": meta_tam.get("new_tam_keywords", ""),

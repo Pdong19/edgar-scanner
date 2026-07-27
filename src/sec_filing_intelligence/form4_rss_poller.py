@@ -153,8 +153,15 @@ def _resolve_insider_schema(conn) -> tuple[str, str]:
     return url_col, owned_col
 
 
-def _upsert_with_reconciliation(conn, txn: dict) -> tuple[int, int]:
+def _upsert_with_reconciliation(conn, txn: dict, is_amendment: bool = False) -> tuple[int, int]:
     """INSERT a transaction + run inline amendment reconciliation.
+
+    Reconciliation only fires when the sibling set (same ticker/insider/
+    transaction_date, not yet amended) contains at least one 4/A filing —
+    matching unrelated same-day filings by that tuple alone was wrongly
+    chaining independent filings as amendments of each other. The 4/A-ness of
+    each row is persisted (is_amendment_filing) so out-of-order ingestion
+    (original arriving after its amendment) still converges.
 
     Returns (inserted_count, amendments_resolved_count).
     """
@@ -169,20 +176,22 @@ def _upsert_with_reconciliation(conn, txn: dict) -> tuple[int, int]:
             f"""INSERT INTO scr_insider_transactions
                  (ticker, filing_date, transaction_date, insider_name, insider_title,
                   transaction_type, shares, price_per_share, total_value,
-                  {owned_col}, is_open_market, accession_number, {url_col}, is_amended)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+                  {owned_col}, is_open_market, accession_number, {url_col}, is_amended,
+                  txn_line, is_amendment_filing)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)""",
             (
                 txn["ticker"], txn["filing_date"], txn["transaction_date"],
                 txn["insider_name"], txn["insider_title"], txn["transaction_type"],
                 txn["shares"], txn["price_per_share"], txn["total_value"],
                 txn["shares_owned_after"], txn["is_open_market"],
-                txn["accession_number"], sec_url,
+                txn["accession_number"], sec_url, txn.get("txn_line"),
+                1 if is_amendment else 0,
             ),
         )
     except sqlite3.IntegrityError as exc:
         msg = str(exc)
-        # Swallow ONLY the intended dedup collision on idx_insider_dedup
-        # (ticker, accession_number, insider_name, transaction_date).
+        # Swallow ONLY the intended dedup collision on idx_insider_dedup_v2
+        # (accession_number, txn_line) — re-processing an already-stored filing.
         # Any other UNIQUE violation (e.g., the legacy inline constraint
         # on ticker+filing_date+insider_name+transaction_type+shares)
         # is a real bug and must propagate.
@@ -191,21 +200,22 @@ def _upsert_with_reconciliation(conn, txn: dict) -> tuple[int, int]:
         raise
     inserted = 1
 
-    # Inline reconciliation: keep latest (filing_date, accession) as is_amended=0.
-    # Use `id` not `rowid`: scr_insider_transactions has `id INTEGER PRIMARY KEY
-    # AUTOINCREMENT`, which makes `rowid` an alias that sqlite3.Row doesn't expose
-    # as a distinct key in result sets (IndexError on r["rowid"]).
+    # Inline reconciliation. Canonical row = amendment filings first, then
+    # latest (filing_date, accession). Use `id` not `rowid`:
+    # scr_insider_transactions has `id INTEGER PRIMARY KEY AUTOINCREMENT`,
+    # which makes `rowid` an alias that sqlite3.Row doesn't expose as a
+    # distinct key in result sets (IndexError on r["rowid"]).
     siblings = conn.execute(
-        """SELECT id, accession_number, filing_date
+        """SELECT id, accession_number, filing_date, is_amendment_filing
              FROM scr_insider_transactions
             WHERE ticker = ? AND insider_name = ? AND transaction_date = ?
               AND is_amended = 0
-            ORDER BY filing_date DESC, accession_number DESC""",
+            ORDER BY is_amendment_filing DESC, filing_date DESC, accession_number DESC""",
         (txn["ticker"], txn["insider_name"], txn["transaction_date"]),
     ).fetchall()
 
     resolved = 0
-    if len(siblings) >= 2:
+    if len(siblings) >= 2 and any(s["is_amendment_filing"] for s in siblings):
         canonical = siblings[0]
         older_ids = [s["id"] for s in siblings[1:]]
         conn.executemany(
@@ -229,6 +239,7 @@ def run_poll() -> dict:
     filings_fetched = 0
     filings_in_universe = 0
     filings_skipped_no_cik = 0
+    filings_already_stored = 0
     new_transactions_inserted = 0
     amendments_resolved = 0
     errors_n = 0
@@ -267,6 +278,16 @@ def run_poll() -> dict:
 
             filings_in_universe += 1
 
+            # Cursorless feed: without this check every hourly poll re-fetched the
+            # directory + XML for all ~100 entries. An accession already stored
+            # needs no re-processing (a 4/A arrives under its own accession).
+            if conn.execute(
+                "SELECT 1 FROM scr_insider_transactions WHERE accession_number = ? LIMIT 1",
+                (f["accession_number"],),
+            ).fetchone():
+                filings_already_stored += 1
+                continue
+
             xml_url = _find_form4_xml_url(f["cik"], f["accession_number"])
             if not xml_url:
                 errors_n += 1
@@ -288,7 +309,8 @@ def run_poll() -> dict:
                 # Ensure cik is populated for the sec_url construction
                 t.setdefault("cik", f["cik"])
                 try:
-                    ins, resolved = _upsert_with_reconciliation(conn, t)
+                    ins, resolved = _upsert_with_reconciliation(
+                        conn, t, is_amendment=bool(f.get("is_amendment")))
                     new_transactions_inserted += ins
                     amendments_resolved += resolved
                 except Exception as exc:
@@ -320,6 +342,7 @@ def run_poll() -> dict:
         "filings_fetched": filings_fetched,
         "filings_in_universe": filings_in_universe,
         "filings_skipped_no_cik": filings_skipped_no_cik,
+        "filings_already_stored": filings_already_stored,
         "new_transactions_inserted": new_transactions_inserted,
         "amendments_resolved": amendments_resolved,
         "errors_n": errors_n,

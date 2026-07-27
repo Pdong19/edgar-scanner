@@ -27,7 +27,7 @@ import sqlite3
 import sys
 import time
 from datetime import date as _date_class
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -274,7 +274,7 @@ def _bank_annual_revenue(facts) -> tuple[float | None, int | None, str | None]:
     return total, fy, period
 
 
-def _annual_revenue(facts) -> tuple[float | None, int | None, str | None]:
+def _annual_revenue_detail(facts) -> tuple[float | None, int | None, str | None, str | None]:
     """Return (revenue, fiscal_year, period_end_date) for the latest FY.
 
     Primary path picks the row with max (period_end, filing_date, value)
@@ -303,13 +303,13 @@ def _annual_revenue(facts) -> tuple[float | None, int | None, str | None]:
             fy = int(pe[:4])
         except (ValueError, IndexError):
             fy = best["fiscal_year"]
-        return best["value"], fy, pe
+        return best["value"], fy, pe, best["concept"]
 
     # Bank-concept fallback: interest + noninterest income sum for banks that
     # don't tag standard revenue concepts.
     bank_rev, bank_fy, bank_pe = _bank_annual_revenue(facts)
     if bank_rev is not None:
-        return bank_rev, bank_fy, bank_pe
+        return bank_rev, bank_fy, bank_pe, None
 
     # Fallback: get_annual_fact per concept (legacy test path)
     for concept in _REVENUE_CONCEPTS:
@@ -324,7 +324,7 @@ def _annual_revenue(facts) -> tuple[float | None, int | None, str | None]:
             fy = int(af.fiscal_year) if af.fiscal_year is not None else None
             pe = str(af.period_end) if af.period_end is not None else None
             if v > 0 and fy is not None and pe:
-                return v, fy, pe
+                return v, fy, pe, concept
         except (TypeError, ValueError):
             continue
 
@@ -334,12 +334,39 @@ def _annual_revenue(facts) -> tuple[float | None, int | None, str | None]:
     except Exception:
         v = None
     if v is None:
-        return None, None, None
-    return float(v), None, None
+        return None, None, None, None
+    return float(v), None, None, None
 
 
-def _prior_revenue_yoy(facts, latest_fy: int | None) -> float | None:
-    """Return prior-year (latest_fy - 1) revenue from latest filing across concepts.
+def _annual_revenue(facts) -> tuple[float | None, int | None, str | None]:
+    """Back-compat 3-tuple wrapper over _annual_revenue_detail."""
+    return _annual_revenue_detail(facts)[:3]
+
+
+def _near_prior_anniversary(row_pe: str, latest_pe: str) -> bool:
+    """True when row_pe sits within ±21 days of latest_pe minus one year.
+
+    Handles 52/53-week fiscal years: a FY ending 2025-01-03 has its prior FY
+    at 2023-12-29, which a plain `startswith("2024-")` year match loses.
+    """
+    try:
+        latest = datetime.strptime(latest_pe, "%Y-%m-%d")
+        row = datetime.strptime(row_pe, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return False
+    anniversary = latest - timedelta(days=365)
+    return row < latest and abs((row - anniversary).days) <= 21
+
+
+def _prior_revenue_yoy(facts, latest_fy: int | None,
+                       latest_pe: str | None = None,
+                       anchor_concept: str | None = None) -> float | None:
+    """Return prior-year (latest_fy - 1) revenue from latest filing.
+
+    When the numerator's concept is known, same-concept facts win — a
+    later-filed stale legacy tag (us-gaap:Revenues left behind after an
+    ASC-606 migration) must not outrank the anchor concept and fabricate
+    +1400% growth. The anniversary window admits 52/53-week fiscal years.
 
     Falls back to interest + noninterest income sum for banks (Phase 1d
     2026-04-15) — same logic as `_bank_annual_revenue` but constrained to
@@ -349,12 +376,18 @@ def _prior_revenue_yoy(facts, latest_fy: int | None) -> float | None:
         return None
     target_fy = latest_fy - 1
 
+    def _in_target_year(r: dict) -> bool:
+        if r["period_end"].startswith(f"{target_fy}-"):
+            return True
+        return bool(latest_pe) and _near_prior_anniversary(r["period_end"], latest_pe)
+
     # Primary: standard revenue concepts
     rows = _collect_fy_rows(facts, _REVENUE_CONCEPTS)
-    matches = [
-        r for r in rows
-        if r["period_end"].startswith(f"{target_fy}-") and r["value"] > 0
-    ]
+    matches = [r for r in rows if _in_target_year(r) and r["value"] > 0]
+    if anchor_concept:
+        same_concept = [r for r in matches if r["concept"] == anchor_concept]
+        if same_concept:
+            matches = same_concept
     if matches:
         matches.sort(key=lambda r: (r["filing_date"], r["value"]), reverse=True)
         return matches[0]["value"]
@@ -423,7 +456,7 @@ def _sanitize_shares(raw: list[tuple[str, float]]) -> tuple[list[tuple[str, floa
 
 # ── Public extractor ─────────────────────────────────────────────────────────
 
-def extract_xbrl_fundamentals(ticker: str) -> dict[str, Any] | None:
+def _extract_with_reason(ticker: str) -> tuple[dict[str, Any] | None, str]:
     """Pull latest annual XBRL facts + 2-year shares history for one ticker.
 
     Returns a dict matching the scr_fundamentals_xbrl schema, or None on hard
@@ -451,32 +484,34 @@ def extract_xbrl_fundamentals(ticker: str) -> dict[str, Any] | None:
         company = _get_company(ticker)
     except Exception as exc:
         logger.debug("Company(%s) failed: %s", ticker, exc)
-        return None
+        return None, "error"
 
     # CIK lookup failure
     cik = getattr(company, "cik", None)
     if cik is None:
         logger.debug("%s: no CIK", ticker)
-        return None
+        return None, "no_coverage"
 
     try:
         facts = company.get_facts()
     except Exception as exc:
         logger.debug("%s: get_facts() failed: %s", ticker, exc)
-        return None
+        return None, "error"
 
     if facts is None:
-        return None
+        return None, "no_coverage"
 
     # ── Revenue + period anchor ──────────────────────────────────────────────
-    revenue, fiscal_year, period_end_date = _annual_revenue(facts)
+    revenue, fiscal_year, period_end_date, revenue_concept = _annual_revenue_detail(facts)
     if revenue is None or fiscal_year is None or period_end_date is None:
         # No revenue or no fiscal year context — we can't anchor a row in the
         # PRIMARY KEY (ticker, fiscal_year). Bail.
         logger.debug("%s: no annual revenue / fiscal_year — skipping", ticker)
-        return None
+        return None, "no_coverage"
 
-    revenue_prev_year = _prior_revenue_yoy(facts, fiscal_year)
+    revenue_prev_year = _prior_revenue_yoy(
+        facts, fiscal_year, latest_pe=period_end_date, anchor_concept=revenue_concept,
+    )
     revenue_growth_yoy: float | None
     if revenue_prev_year and revenue_prev_year > 0:
         revenue_growth_yoy = (revenue - revenue_prev_year) / revenue_prev_year
@@ -657,7 +692,17 @@ def extract_xbrl_fundamentals(ticker: str) -> dict[str, Any] | None:
         "cash_runway_quarters": cash_runway_quarters,
         "data_quality_flags": json.dumps(flags),
         "source": "edgar_xbrl",
-    }
+    }, "ok"
+
+
+def extract_xbrl_fundamentals(ticker: str) -> dict[str, Any] | None:
+    """Extract one ticker's XBRL fundamentals row (None when unavailable).
+
+    Thin wrapper over _extract_with_reason — the batch path uses the reason to
+    tell "this ticker has no XBRL coverage" apart from "the API is failing",
+    so uncovered tickers no longer trigger rate-limit backoff.
+    """
+    return _extract_with_reason(ticker)[0]
 
 
 # ── DB writer ────────────────────────────────────────────────────────────────
@@ -732,16 +777,21 @@ def refresh_xbrl_fundamentals(
 
         for tkr in batch:
             try:
-                row = extract_xbrl_fundamentals(tkr)
+                row, reason = _extract_with_reason(tkr)
             except Exception as exc:
                 logger.warning("extract crashed for %s: %s", tkr, exc)
-                row = None
+                row, reason = None, "error"
             if row is not None:
                 batch_rows.append(row)
                 ok += 1
             else:
                 failed += 1
-                batch_errs += 1
+                # Only real failures count toward the rate-limit backoff:
+                # "no_coverage" (no CIK / no XBRL facts / no revenue anchor) is a
+                # property of the ticker, and counting it was ratcheting the
+                # batch size 50→1 with 30s sleeps on sparse universes.
+                if reason == "error":
+                    batch_errs += 1
             time.sleep(sleep_per_call)
 
         try:

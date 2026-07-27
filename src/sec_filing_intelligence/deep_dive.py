@@ -210,12 +210,14 @@ def _collect_ticker_data(ticker: str) -> dict:
         if ac:
             data["analyst_count"] = data.get("analyst_count") or ac["analyst_count"]
 
-        # scr_ampx_red_flags (going concern)
+        # scr_ampx_red_flags — LATEST scan only: a going-concern flag from an old
+        # scan that has since cleared must not keep hard-killing the ticker.
         rf = conn.execute(
             """SELECT flag_type FROM scr_ampx_red_flags
                WHERE ticker = ?
-               ORDER BY scan_date DESC LIMIT 5""",
-            (ticker,),
+                 AND scan_date = (SELECT MAX(scan_date) FROM scr_ampx_red_flags
+                                  WHERE ticker = ?)""",
+            (ticker, ticker),
         ).fetchall()
         data["red_flags"] = [r["flag_type"] for r in rf]
 

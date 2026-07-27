@@ -279,7 +279,7 @@ def test_amendment_marks_original_is_amended_and_inserts_new_row(mem_db):
 
     with mem_db:
         _upsert_with_reconciliation(mem_db, original)
-        _upsert_with_reconciliation(mem_db, amendment)
+        _upsert_with_reconciliation(mem_db, amendment, is_amendment=True)
 
     rows = mem_db.execute(
         "SELECT accession_number, is_amended, amendment_accession "
@@ -312,7 +312,7 @@ def test_amendment_out_of_order_reconciled_by_later_insertion(mem_db):
                  "filing_date": "2025-03-20"}
 
     with mem_db:
-        _upsert_with_reconciliation(mem_db, amendment)  # amendment first
+        _upsert_with_reconciliation(mem_db, amendment, is_amendment=True)  # amendment first
         _upsert_with_reconciliation(mem_db, original)   # original second
 
     rows = mem_db.execute(

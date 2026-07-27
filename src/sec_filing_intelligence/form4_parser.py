@@ -115,7 +115,7 @@ def parse_form4_xml(root: ET.Element, filing_date: str, accession: str) -> list[
         title = "Other"
 
     transactions = []
-    for txn in _find_all(root, "nonDerivativeTransaction"):
+    for txn_line, txn in enumerate(_find_all(root, "nonDerivativeTransaction")):
         code = _get_text(txn, "transactionCode")
         if not code:
             continue
@@ -144,6 +144,9 @@ def parse_form4_xml(root: ET.Element, filing_date: str, accession: str) -> list[
             "shares_owned_after": shares_after,
             "is_open_market": 1 if code in ("P", "S") else 0,
             "accession_number": accession,
+            # Ordinal of this line within the filing — the dedup identity
+            # (accession_number, txn_line) that keeps multi-line Form 4s intact.
+            "txn_line": txn_line,
         })
 
     return transactions

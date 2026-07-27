@@ -309,13 +309,30 @@ _GOING_CONCERN_COMPILED = [
 ]
 
 
+# Clean 10-Ks routinely carry the ASU 2014-15 evaluation boilerplate
+# ("evaluated whether conditions raise substantial doubt ... concluded that no
+# such conditions exist"). A match whose local context negates the doubt is NOT
+# a going-concern disclosure. "Alleviated" is deliberately absent: doubt that
+# was raised and then alleviated by management's plans is still a disclosure.
+_GC_NEGATION_RE = re.compile(
+    r"no substantial doubt"
+    r"|not raise substantial doubt"
+    r"|(do|does|did) not raise"
+    r"|no such (conditions|circumstances|factors)"
+    r"|concluded that (there (is|are|was|were) )?no",
+    re.IGNORECASE,
+)
+
+
 def scan_going_concern_text(text: str | None) -> str | None:
-    """Return the first matched phrase (up to 200 chars) or None."""
+    """Return the first non-negated matched phrase (up to 200 chars) or None."""
     if not text:
         return None
     for pat in _GOING_CONCERN_COMPILED:
-        m = pat.search(text)
-        if m:
+        for m in pat.finditer(text):
+            window = text[max(0, m.start() - 150): m.end() + 150]
+            if _GC_NEGATION_RE.search(window):
+                continue  # negated evaluation boilerplate, not a disclosure
             return m.group(0)[:200]  # cap logged phrase length
     return None
 
