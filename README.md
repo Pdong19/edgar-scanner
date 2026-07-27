@@ -257,7 +257,7 @@ edgar-scanner/
 │   ├── discovery.py           # EFTS full-text search engine (6 phases)
 │   ├── deep_dive.py           # 12-module automated analysis framework
 │   ├── filing_scanner.py      # SEC EDGAR EFTS query builder + XML parser
-│   ├── ampx_rules.py          # 11-dimension threshold scorer
+│   ├── ampx_rules.py          # 12-dimension threshold scorer
 │   ├── forward_moat.py        # Trajectory signal detection
 │   ├── xbrl_fundamentals.py   # SEC XBRL financial data extraction
 │   ├── fundamentals.py        # yfinance data refresh
