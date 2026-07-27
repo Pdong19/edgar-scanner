@@ -4,7 +4,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-Autonomous pipeline that extracts investment signals from SEC EDGAR filings. Searches every 10-K for monopoly language, scores companies on 11 quantitative dimensions, tracks insider buying in real-time, and validates claims against federal contract records.
+Autonomous pipeline that extracts investment signals from SEC EDGAR filings. Searches every 10-K for monopoly language, scores companies on 12 quantitative dimensions, tracks insider buying in real-time, and validates claims against federal contract records.
 
 Built to find undiscovered small-cap companies with structural competitive advantages — before the market does.
 
@@ -33,7 +33,7 @@ graph TB
         XVAL["10-K Cross-Validation<br/><i>Customer filing<br/>mentions</i>"]
     end
 
-    DB[("SQLite<br/>35 tables · WAL mode<br/>Auto-migration")]
+    DB[("SQLite<br/>34 tables · WAL mode<br/>Auto-migration")]
 
     EFTS --> DD
     FM --> DD
@@ -57,14 +57,15 @@ graph TB
 
 - **Multi-source validation.** Discovery hits aren't trusted at face value. Claims like "sole source" are validated against USAspending.gov federal contract records and cross-referenced in other companies' 10-K filings. A company mentioned as a supplier by 3+ other companies gets a higher score than one that only claims it themselves.
 
-- **Going-concern hard kill.** Four regex patterns scan the latest 10-K for going-concern language. Any match is an automatic disqualification — no score can override fundamental business risk.
+- **Going-concern scoring, tiered not binary.** Four regex patterns scan the latest 10-K for going-concern language. A match applies a stacking penalty (−0.5 to −2.0, scaled by cash runway and revenue trajectory) rather than a blanket kill — a going-concern flag with 8 quarters of cash is a different risk than one with 2, and the ticker surfaces with the risk visibly labeled instead of silently vanishing. Only reverse-split share destruction remains an automatic hard kill.
 
 ## Modules
 
 | Module | What it does | Entry point |
 |--------|-------------|-------------|
-| **EFTS Discovery** | Searches all SEC 10-K filings for 120 moat keywords across 10 moat types, validates against federal contracts and customer filings | `python -m sec_filing_intelligence.discovery --run` |
-| **AMPX Screener** | 11-dimension threshold scorer: crash depth, revenue growth, debt, runway, float, institutional ownership, analyst coverage, sector, short interest, options, insider buying | `python -m sec_filing_intelligence.ampx_rules --run` |
+| **Universe** | Seeds and inspects the ticker table every other module works from; resolves CIKs from SEC's public mapping | `python -m sec_filing_intelligence.universe --seed examples/sample_universe.txt` |
+| **EFTS Discovery** | Searches all SEC 10-K filings for 120 moat keywords across 11 moat types, validates against federal contracts and customer filings | `python -m sec_filing_intelligence.discovery --run` |
+| **AMPX Screener** | 12-dimension threshold scorer: crash depth, revenue growth, debt, runway, float, institutional ownership, analyst coverage, sector, short interest, options, insider buying, dilution drag | `python -m sec_filing_intelligence.ampx_rules --run` |
 | **Forward Moat** | Detects companies *building* moats via backlog acceleration, partnership mismatches, capex inflection, technology milestones | `python -m sec_filing_intelligence.forward_moat --run` |
 | **Deep Dive** | 12-module automated analysis: moat scoring (0-25), analog DNA matching, balance sheet, insider forensics, expected value estimation | `python -m sec_filing_intelligence.deep_dive --run` |
 | **XBRL Extractor** | Replaces unreliable yfinance data with machine-readable SEC XBRL financials (revenue, debt, shares outstanding, cash flow) | `python -m sec_filing_intelligence.xbrl_fundamentals --refresh` |
@@ -82,6 +83,13 @@ pip install -e ".[dev]"
 
 cp .env.example .env
 # Edit .env with your contact email (SEC fair-access policy requires it)
+
+# Seed the ticker universe — every module works from this table
+python -m sec_filing_intelligence.universe --seed examples/sample_universe.txt
+
+# Pull fundamentals + price data for the seeded tickers
+python -m sec_filing_intelligence.fundamentals
+python -m sec_filing_intelligence.price_analyzer
 ```
 
 All APIs used are **free and public** — SEC EDGAR, USAspending.gov, yfinance. No paid API keys required.
@@ -146,7 +154,7 @@ Top 15 by score:
  #2  AEHR   8.5/12.5  CRASH:2.0 REV:1.0 DEBT:1.0 RUN:1.5 FLT:1.0 INST:0.5 ANLY:0.5 PRI:1.0
  #3  BKSY   8.0/12.5  CRASH:2.0 REV:2.0 DEBT:1.0 RUN:0.75 FLT:1.0 PRI:1.0
 
-Going-concern kills: 12 tickers
+Going-concern penalties: 12 tickers
 Full results: output/ampx_rules/2026-04-17.csv
 ```
 
@@ -165,7 +173,7 @@ Deep-dive verdicts: 4 PASS, 29 WATCHLIST, 67 KILL
 
 ## Customization
 
-All thresholds, keywords, and scoring weights live in [`config.py`](src/sec_filing_intelligence/config.py) (800 lines). No code changes needed to customize the scanner for your own use case.
+All thresholds, keywords, and scoring weights live in [`config.py`](src/sec_filing_intelligence/config.py). No code changes needed to customize the scanner for your own use case.
 
 **Add moat keywords** — append to the `DISCOVERY_HARD_KEYWORDS` or `DISCOVERY_SOFT_KEYWORDS` lists:
 ```python
@@ -208,7 +216,7 @@ AMPX_PRIORITY_INDUSTRIES = (
 5. **10-K Context Analysis** — Downloads actual filing text, classifies keyword location (Business Description vs Risk Factors)
 6. **Deep Dive** — 12-module automated analysis with PASS/WATCHLIST/KILL verdicts
 
-### AMPX 11-Dimension Scoring (max 12.5)
+### AMPX Scoring — 11 scored dimensions + dilution drag (max 12.5)
 | Dim | Max | Signal |
 |-----|-----|--------|
 | CRASH | 2.0 | Stock crashed 60-80%+ from highs |
@@ -218,18 +226,19 @@ AMPX_PRIORITY_INDUSTRIES = (
 | FLOAT | 1.0 | Small float (< 100M shares) |
 | INSTOWN | 1.0 | Low institutional ownership (< 20%) |
 | ANALYST | 1.0 | Under-followed (0-3 analysts) |
-| PRIORITY | 1.0 | Target sector match (34 keywords) |
+| PRIORITY | 1.0 | Target sector match (38 keywords) |
 | SHORT | 0.5 | High short interest (> 15%) |
 | LEAPS | 0.5 | LEAPS options available |
 | INSIDER | 1.0 | Insider buying cluster detected |
+| DILUTION | −1.0 floor | Penalty-only drag for 2-yr share dilution (tiered at >10% / >50% / ≥100%) |
 
-### 10 Moat Types Detected
-Regulatory, Technology/Patent, Infrastructure, Network/Data, Supply Chain, Government Contract, Platform, Switching Cost, Data/IP, Qualified Supplier
+### 11 Moat Types Detected
+Regulatory, Regulated Non-Defense, Technology/Patent, Infrastructure, Network, Data/IP, Supply Chain, Government Contract, Platform, Switching Cost, Qualified Supplier
 
 ## Testing
 
 ```bash
-# Run all 216 tests
+# Run all 257 tests
 pytest tests/ -v
 
 # Lint
@@ -239,11 +248,12 @@ ruff check src/ tests/
 ## Project Structure
 
 ```
-sec-filing-intelligence/
+edgar-scanner/
 ├── src/sec_filing_intelligence/
-│   ├── config.py              # 800 lines of thresholds, keywords, scoring weights
-│   ├── db.py                  # SQLite WAL wrapper + 35-table DDL + auto-migration
-│   ├── utils.py               # Rate limiting, logging, chunking
+│   ├── config.py              # Thresholds, keywords, scoring weights
+│   ├── db.py                  # SQLite WAL wrapper + 34-table DDL + auto-migration
+│   ├── universe.py            # Ticker universe seeding + CIK resolution
+│   ├── utils.py               # Shared rate limiting, logging, chunking
 │   ├── discovery.py           # EFTS full-text search engine (6 phases)
 │   ├── deep_dive.py           # 12-module automated analysis framework
 │   ├── filing_scanner.py      # SEC EDGAR EFTS query builder + XML parser
@@ -256,8 +266,8 @@ sec-filing-intelligence/
 │   ├── form4_rss_poller.py    # Real-time SEC atom feed poller
 │   ├── insider_tracker.py     # Insider transaction aggregation
 │   └── moat_scorer.py         # CPC patent classification scoring
-├── tests/                     # 216 tests across 8 test modules
-├── examples/                  # Runnable example scripts
+├── tests/                     # 257 tests across 11 test modules
+├── examples/                  # Runnable example scripts + sample universe
 ├── .github/workflows/         # CI: tests on Python 3.10/3.11/3.12
 ├── pyproject.toml
 ├── .env.example
