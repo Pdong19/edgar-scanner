@@ -1,7 +1,7 @@
-"""Tests for scripts/screener/db.py — connection management and migration.
+"""Tests for sec_filing_intelligence.db — connection management and migration.
 
 Every test uses an in-memory SQLite database via monkeypatching so the
-production stocks.db is never touched.
+the real data/sec_filings.db is never touched.
 """
 
 import sqlite3
@@ -101,7 +101,7 @@ class TestGetConnection:
 
 
 # ---------------------------------------------------------------------------
-# Tests: run_migration creates all 20 scr_ tables
+# Tests: run_migration creates all 34 scr_ tables
 # ---------------------------------------------------------------------------
 
 class TestRunMigration:
@@ -148,10 +148,13 @@ class TestRunMigration:
         "scr_deep_dive_results",
         # Discovery history tracking (added 2026-04-17)
         "scr_discovery_history",
+        # Forward moat scanner (added 2026-04-22)
+        "scr_forward_moat_scores",
+        "scr_forward_moat_history",
     ]
 
-    def test_creates_all_32_tables(self, _in_memory_db):
-        """run_migration() creates exactly the 32 expected scr_ tables."""
+    def test_creates_all_34_tables(self, _in_memory_db):
+        """run_migration() creates exactly the 34 expected scr_ tables."""
         from sec_filing_intelligence.db import run_migration
 
         run_migration()

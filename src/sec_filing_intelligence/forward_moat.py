@@ -887,6 +887,10 @@ def _fetch_partnership_signal(
 
 def _fetch_capex_signal(ticker: str, pct_from_ath: float | None) -> tuple[float, dict]:
     """yfinance cash_flow + income_stmt for capex/R&D, score."""
+    # scr_price_metrics stores pct_from_ath as a PERCENT (-85.0); the scoring
+    # contract (score_capex_inflection, pinned by tests) is a FRACTION (-0.85).
+    if pct_from_ath is not None:
+        pct_from_ath = pct_from_ath / 100.0
     capex_current = capex_prior = rd_current = rd_prior = None
     try:
         import yfinance as yf
@@ -1350,8 +1354,10 @@ def merge_combined_csv(
         moat_score = moat.get("composite_score", 0)
         forward_score = fwd.get("forward_score", 0)
 
-        # Convergence reward: forward_rank weighted 1.5x when moat_score > 20
-        weight = 1.5 if moat_score > 20 else 1.0
+        # Convergence reward: discount forward_rank when the moat is strong.
+        # combined_score sorts ASCENDING (lower = better), so a reward must
+        # shrink the score — the old 1.5x multiplier ranked convergence WORSE.
+        weight = 1.0 / 1.5 if moat_score > 20 else 1.0
         combined_score = moat_rank + forward_rank * weight
 
         combined.append({
@@ -1384,6 +1390,9 @@ def merge_combined_csv(
 
 def main():
     """CLI entry point for the forward moat scanner."""
+    from .config import warn_if_placeholder_identity
+
+    warn_if_placeholder_identity()
     parser = argparse.ArgumentParser(
         description="Forward Moat Scanner — trajectory signals for companies building moats"
     )
@@ -1397,7 +1406,8 @@ def main():
     args = parser.parse_args()
 
     if args.run:
-        summary = run_forward_scan(dry_run=False)
+        # --dry-run composes with --run (docstring advertises `--run --dry-run`)
+        summary = run_forward_scan(dry_run=args.dry_run)
         csv_name = Path(summary["csv_path"]).name if summary.get("csv_path") else ""
         print(f"Scan complete: {summary['total_scored']} scored, CSV: {csv_name}")
     elif args.dry_run:

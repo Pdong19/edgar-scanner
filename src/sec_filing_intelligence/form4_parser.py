@@ -54,6 +54,23 @@ def _get_text(root: ET.Element, tag: str) -> Optional[str]:
     return None
 
 
+def _get_value_text(root: ET.Element, tag: str) -> Optional[str]:
+    """Text variant of _get_value: read <tag><value>text</value></tag>.
+
+    Falls back to the tag's own text for non-container serializations. Plain
+    _get_text cannot see container values — the wrapper element's own .text is
+    None or whitespace, which silently discarded every real transactionDate.
+    """
+    for elem in root.iter():
+        if _local_tag(elem) == tag:
+            for child in elem:
+                if _local_tag(child) == "value" and child.text and child.text.strip():
+                    return child.text.strip()
+            if elem.text and elem.text.strip():
+                return elem.text.strip()
+    return None
+
+
 def _get_value(root: ET.Element, tag: str) -> Optional[float]:
     """Form 4 XML stores values as <tag><value>N</value></tag>; extract the float."""
     for elem in root.iter():
@@ -105,7 +122,7 @@ def parse_form4_xml(root: ET.Element, filing_date: str, accession: str) -> list[
 
         shares_f = _get_value(txn, "transactionShares")
         price = _get_value(txn, "transactionPricePerShare")
-        txn_date = _get_text(txn, "transactionDate") or filing_date
+        txn_date = _get_value_text(txn, "transactionDate") or filing_date
         shares_after_f = _get_value(txn, "sharesOwnedFollowingTransaction")
 
         shares = int(shares_f) if shares_f is not None else None

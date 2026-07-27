@@ -74,6 +74,12 @@ def _collect_ticker_data(ticker: str) -> dict:
                     data[col] = row[col]
                 except (IndexError, KeyError):
                     pass
+            # scr_discovery_flags.market_cap is stored in raw dollars; this module
+            # (and its yfinance enrichment path) works in millions. Normalize on
+            # read — no real cap expressed in millions exceeds 1_000_000.
+            mc = data.get("market_cap")
+            if mc and mc > 1_000_000:
+                data["market_cap"] = mc / 1_000_000
 
         # scr_text_search_hits — all keyword hits
         hits = conn.execute(
@@ -738,7 +744,7 @@ def _estimate_expected_value(data: dict, moat: dict, analogs: dict,
     Uses moat strength, analog match, phase, and fundamentals to construct
     rough bull/base/bear scenarios. NOT a precise valuation — a scoring heuristic.
     """
-    moat_score = moat.get("total", 0)
+    moat_score = moat.get("moat_score", 0)
     best_analog_score = analogs.get("best_analog_score", 0)
     phase = washout.get("phase", 3)
     revenue_growth = data.get("revenue_growth") or 0

@@ -245,6 +245,12 @@ def run_poll() -> dict:
 
     with get_connection() as conn:
         universe_ciks = _universe_cik_set(conn)
+        if not universe_ciks:
+            logger.warning(
+                "scr_universe has no active tickers with CIKs — every filing will be "
+                "skipped. Seed it first: python -m sec_filing_intelligence.universe "
+                "--seed examples/sample_universe.txt"
+            )
 
         for f in filings:
             # Universe filter by CIK: skip any filing whose CIK isn't in our active,
@@ -395,6 +401,9 @@ def run_daily_backfill() -> dict:
 
 
 def main():
+    from .config import warn_if_placeholder_identity
+
+    warn_if_placeholder_identity()
     parser = argparse.ArgumentParser(description="EDGAR Form 4 atom poller + daily backfill")
     parser.add_argument("--poll", action="store_true",
                         help="Run one hourly atom poll (writes to scr_insider_transactions)")

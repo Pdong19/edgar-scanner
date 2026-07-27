@@ -32,8 +32,10 @@ from pathlib import Path
 from typing import Any
 
 # edgartools requires EDGAR_IDENTITY before import (silently errors otherwise).
-# Set it before any edgar.* import so test-time and CLI both work.
-os.environ.setdefault("EDGAR_IDENTITY", "SECFilingIntelligence research@example.com")
+# Default to the configured User-Agent (config reads .env) instead of a fake identity.
+from .config import EDGAR_USER_AGENT as _EDGAR_UA
+
+os.environ.setdefault("EDGAR_IDENTITY", _EDGAR_UA)
 
 from .config import (
     AMPX_OUTPUT_DIR,
@@ -588,10 +590,12 @@ def extract_xbrl_fundamentals(ticker: str) -> dict[str, Any] | None:
         quarterly_burn = None
         cash_runway_quarters = None
     elif operating_cash_flow >= 0:
-        # Profitable on cash basis — runway not meaningful
+        # Profitable on cash basis — runway is effectively unlimited. Report the
+        # cap rather than None: None scores 0 downstream, ranking cash-generative
+        # companies below cash burners.
         flags.append("positive_cashflow")
         quarterly_burn = None
-        cash_runway_quarters = None
+        cash_runway_quarters = float(XBRL_RUNWAY_CAP_QUARTERS)
     else:
         quarterly_burn = operating_cash_flow / 4.0  # negative
         if cash_and_equivalents is not None and quarterly_burn != 0:
@@ -1050,6 +1054,9 @@ def generate_validation_report(
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 def main(argv: list[str] | None = None) -> int:
+    from .config import warn_if_placeholder_identity
+
+    warn_if_placeholder_identity()
     parser = argparse.ArgumentParser(
         prog="python -m sec_filing_intelligence.xbrl_fundamentals",
         description="EDGAR XBRL fundamentals extractor for the AMPX screener.",

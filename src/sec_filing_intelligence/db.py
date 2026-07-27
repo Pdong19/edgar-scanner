@@ -10,6 +10,7 @@ dimensions. No mechanical elimination by score thresholds. Three detection modes
 
 import sqlite3
 from contextlib import contextmanager
+from pathlib import Path
 
 from .config import DB_PATH
 
@@ -17,6 +18,9 @@ from .config import DB_PATH
 @contextmanager
 def get_connection():
     """Context manager for SQLite connections with WAL mode."""
+    # A fresh clone has no data/ directory; sqlite3 cannot create parent dirs itself.
+    # Path() coercion: tests (and SFI_DB_PATH users) may supply a plain string.
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -31,7 +35,7 @@ _migrated = False
 
 
 def run_migration():
-    """Create all 24 scr_ tables if they don't exist, then seed reference data.
+    """Create all scr_ tables if they don't exist, then seed reference data.
 
     CRITICAL: This function ONLY creates scr_ prefixed tables.
     It never modifies any existing pipeline table.
@@ -227,7 +231,7 @@ def get_active_tickers() -> list[str]:
     return [r["ticker"] for r in rows]
 
 
-# ── DDL for all 24 tables ────────────────────────────────────────────────────
+# ── DDL — every scr_ table (count pinned by test_creates_all_34_tables) ──────
 
 _DDL = """
 

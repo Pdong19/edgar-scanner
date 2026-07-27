@@ -188,6 +188,10 @@ def _fetch_yfinance(ticker: str) -> dict | None:
             quarterly_burn_rate = prev_cash - cash
             if quarterly_burn_rate > 0 and cash > 0:
                 cash_runway_quarters = cash / quarterly_burn_rate
+            elif cash > 0:
+                # Not burning (flat or building cash): effectively unlimited runway.
+                # None here would score 0 — worse than a company burning cash.
+                cash_runway_quarters = 99.0
 
         # ── Build result dict ─────────────────────────────────────────────
         data = {
@@ -206,7 +210,12 @@ def _fetch_yfinance(ticker: str) -> dict | None:
             "shares_outstanding": info.get("sharesOutstanding"),
             "cash_and_equivalents": cash,
             "total_debt": total_debt,
-            "debt_to_equity": info.get("debtToEquity"),
+            # Yahoo reports debtToEquity as a percentage (154.5 == 1.545x). Store
+            # the ratio so this column shares one scale with the XBRL extractor
+            # (scorer thresholds like de <= 0.1 are ratios).
+            "debt_to_equity": (
+                info["debtToEquity"] / 100.0 if info.get("debtToEquity") is not None else None
+            ),
             "current_ratio": info.get("currentRatio"),
             "roe": info.get("returnOnEquity"),
             "quarterly_burn_rate": quarterly_burn_rate,
@@ -470,7 +479,10 @@ def main():
     else:
         tickers = _get_active_tickers()
         if not tickers:
-            logger.error("No active tickers in scr_universe. Run universe.sync_from_watchlist() first.")
+            logger.error(
+                "No active tickers in scr_universe. Seed it first: "
+                "python -m sec_filing_intelligence.universe --seed examples/sample_universe.txt"
+            )
             sys.exit(1)
         summary = collect_batch(tickers, force=args.force)
         if summary["failed"] > 0:

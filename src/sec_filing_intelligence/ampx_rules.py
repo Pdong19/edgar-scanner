@@ -302,7 +302,7 @@ def score_priority_industry(company_name: str | None, industry: str | None) -> f
     return 1.0 if _PRIORITY_PATTERN.search(text) else 0.0
 
 
-# ── Going-concern hard kill ───────────────────────────────────────────────────
+# ── Going-concern detection (tiered scoring penalty, not a hard kill) ─────────
 
 _GOING_CONCERN_COMPILED = [
     re.compile(p, re.IGNORECASE | re.DOTALL) for p in AMPX_GOING_CONCERN_PATTERNS
@@ -327,8 +327,11 @@ def check_going_concern(ticker: str) -> str | None:
     (do NOT hard-kill on absent data).
     """
     import os
-    # edgartools requires EDGAR_IDENTITY. Set a default matching EDGAR_USER_AGENT convention.
-    os.environ.setdefault("EDGAR_IDENTITY", "SECFilingIntelligence research@example.com")
+
+    from .config import EDGAR_USER_AGENT as _edgar_ua
+
+    # edgartools requires EDGAR_IDENTITY. Default to the configured User-Agent.
+    os.environ.setdefault("EDGAR_IDENTITY", _edgar_ua)
     try:
         from edgar import Company  # provided by edgartools package
         company = Company(ticker)
@@ -476,8 +479,11 @@ def count_insider_buys(ticker: str, as_of: str, db_path: str | None = None) -> d
 
 
 def score_insider_buying(agg: dict[str, int]) -> float:
-    """Dimension 11: cluster threshold → 1.0; any buys at all → 0.5; none → 0.0."""
-    if agg["cluster_count"] >= AMPX_INSIDER_CLUSTER_MIN_COUNT:
+    """Dimension 11: any qualifying cluster → 1.0; any buys at all → 0.5; none → 0.0."""
+    # cluster_count counts window EVENTS, each already requiring
+    # AMPX_INSIDER_CLUSTER_MIN_COUNT distinct insiders. Comparing the event count
+    # against the insider threshold demanded 3+ insiders for full credit.
+    if agg["cluster_count"] >= 1:
         return 1.0
     if agg["buy_count"] >= 1:
         return 0.5
@@ -554,7 +560,7 @@ def score_row(
     # are derived from mis-scaled data — don't reward them. NXTT had 500%+ apparent
     # growth AND this flag; shipping the flag-consumption closes that hole.
     MIN_REVENUE_TTM = 1_000_000
-    revenue_ttm = row.get("revenue_ttm") or 0
+    revenue_ttm = row.get("revenue_ttm")  # None = source didn't supply it (≠ tiny base)
 
     xbrl_flags_raw = row.get("xbrl_data_quality_flags")
     xbrl_flags: list[str] = []
@@ -577,7 +583,7 @@ def score_row(
         haircut = 1.0
     if "scaling_bug_suspected" in xbrl_flags:
         d2 = 0.0
-    elif effective is None or revenue_ttm < MIN_REVENUE_TTM:
+    elif effective is None or (revenue_ttm is not None and revenue_ttm < MIN_REVENUE_TTM):
         d2 = 0.0
     elif effective >= 1.0:
         d2 = 2.0 * haircut
@@ -710,6 +716,9 @@ def score_row(
 
 
 def main(argv: list[str] | None = None) -> int:
+    from .config import warn_if_placeholder_identity
+
+    warn_if_placeholder_identity()
     parser = argparse.ArgumentParser(
         prog="python -m sec_filing_intelligence.ampx_rules",
         description="AMPX threshold-based screener over the existing universe.",

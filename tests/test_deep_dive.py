@@ -1,7 +1,7 @@
 """Tests for the Automated Deep-Dive Scoring module (Phase 6).
 
 Every test uses an in-memory SQLite database via monkeypatching so the
-production stocks.db is never touched.
+the real data/sec_filings.db is never touched.
 """
 
 import sqlite3

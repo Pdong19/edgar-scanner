@@ -2,6 +2,7 @@
 
 import logging
 import os
+import threading
 import time
 from functools import wraps
 from pathlib import Path
@@ -26,23 +27,33 @@ def get_logger(name: str, log_file: str = "screener.log") -> logging.Logger:
     return logger
 
 
-def rate_limiter(max_rps: float):
-    """Decorator to enforce rate limiting on a function.
+_rate_lock = threading.Lock()
+_rate_next_slot: dict[str, float] = {}
+
+
+def rate_limiter(max_rps: float, bucket: str = "sec"):
+    """Decorator enforcing a rate limit SHARED across every function in `bucket`.
+
+    A per-function budget would multiply the aggregate rate by the number of
+    decorated call sites (six SEC callers each holding the full policy budget).
+    Slot reservation happens under a lock, so the limit holds under threads.
 
     Args:
-        max_rps: Maximum requests per second.
+        max_rps: Maximum requests per second for the whole bucket.
+        bucket: Budget name — all decorations sharing it share one budget.
     """
     min_interval = 1.0 / max_rps
 
     def decorator(func):
-        last_call = [0.0]
-
         @wraps(func)
         def wrapper(*args, **kwargs):
-            elapsed = time.monotonic() - last_call[0]
-            if elapsed < min_interval:
-                time.sleep(min_interval - elapsed)
-            last_call[0] = time.monotonic()
+            with _rate_lock:
+                now = time.monotonic()
+                slot = max(_rate_next_slot.get(bucket, 0.0), now)
+                _rate_next_slot[bucket] = slot + min_interval
+            wait = slot - now
+            if wait > 0:
+                time.sleep(wait)
             return func(*args, **kwargs)
 
         return wrapper

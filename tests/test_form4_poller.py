@@ -1,4 +1,4 @@
-"""Tests for scripts/screener/form4_rss_poller.py — atom poll, universe filter, amendment logic."""
+"""Tests for sec_filing_intelligence.form4_rss_poller — atom poll, universe filter, amendment logic."""
 
 import sqlite3
 from contextlib import contextmanager

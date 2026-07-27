@@ -1,0 +1,38 @@
+# Sample universe for edgar-scanner — one ticker per line, '#' starts a comment.
+# Small/mid caps in the scanner's target sectors (defense, space, nuclear,
+# semis, quantum). Replace with your own watchlist.
+
+# Defense / drones
+RCAT     # Red Cat Holdings
+KTOS     # Kratos Defense
+AVAV     # AeroVironment
+MRCY     # Mercury Systems
+BYRN     # Byrna Technologies
+
+# Space
+RKLB     # Rocket Lab
+ASTS     # AST SpaceMobile
+LUNR     # Intuitive Machines
+RDW      # Redwire
+BKSY     # BlackSky
+PL       # Planet Labs
+SPIR     # Spire Global
+
+# Nuclear / uranium
+SMR      # NuScale Power
+OKLO     # Oklo
+LEU      # Centrus Energy
+BWXT     # BWX Technologies
+DNN      # Denison Mines
+UEC      # Uranium Energy
+UUUU     # Energy Fuels
+
+# Semis / test / power
+AEHR     # Aehr Test Systems
+POWL     # Powell Industries
+CRDO     # Credo Technology
+CPSH     # CPS Technologies
+
+# Quantum
+IONQ     # IonQ
+QBTS     # D-Wave Quantum

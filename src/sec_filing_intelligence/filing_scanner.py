@@ -133,7 +133,8 @@ def _parse_hits(data: dict, keyword: str, category: str,
         ciks = src.get("ciks", [])
         display_names = src.get("display_names", [])
         filing_date = src.get("file_date")
-        form_type = src.get("form") or src.get("root_forms", [""])[0]
+        # `or [""]` also guards a present-but-empty root_forms list (IndexError otherwise)
+        form_type = src.get("form") or (src.get("root_forms") or [""])[0]
         file_desc = src.get("file_description", "")
         accession = src.get("adsh", "")
 
@@ -193,6 +194,54 @@ def _parse_hits(data: dict, keyword: str, category: str,
         })
 
     return results
+
+
+def efts_search(keyword: str, form_type: str = "10-K", limit: int = 10,
+                start_date: str | None = None, end_date: str | None = None) -> list[dict]:
+    """Public EFTS search — the simple entry point used by examples/ and scripts.
+
+    Unlike the pipeline path (`search_keyword`), this does not filter to the
+    scr_universe and needs no database. Returns up to `limit` hit dicts:
+    entity_name, ticker (None when unresolvable), cik/entity_id, form,
+    file_date, accession. Dates default to the trailing 365 days.
+    """
+    if end_date is None:
+        end_date = datetime.now().strftime("%Y-%m-%d")
+    if start_date is None:
+        start_date = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+
+    hits_out: list[dict] = []
+    start_from = 0
+    while len(hits_out) < limit:
+        data = _efts_search(keyword, start_date, end_date,
+                            forms=form_type, start_from=start_from)
+        if not data:
+            break
+        hits = data.get("hits", {}).get("hits", [])
+        if not hits:
+            break
+        for hit in hits:
+            src = hit.get("_source", {})
+            ciks = src.get("ciks") or []
+            displays = src.get("display_names") or []
+            display = displays[0] if displays else ""
+            ticker = _extract_ticker_from_display(display) if display else None
+            if not ticker and ciks:
+                ticker = _cik_to_ticker_lookup(ciks[0])
+            cik = ciks[0] if ciks else None
+            hits_out.append({
+                "entity_name": display.split("  (")[0].strip() if display else None,
+                "ticker": ticker,
+                "cik": cik,
+                "entity_id": cik,
+                "form": src.get("form") or (src.get("root_forms") or [""])[0],
+                "file_date": src.get("file_date"),
+                "accession": src.get("adsh"),
+            })
+            if len(hits_out) >= limit:
+                break
+        start_from += len(hits)
+    return hits_out
 
 
 # ── Search orchestration ─────────────────────────────────────────────────────
@@ -393,6 +442,9 @@ def score_filing_signals(ticker: str) -> dict:
 
 
 def main():
+    from .config import warn_if_placeholder_identity
+
+    warn_if_placeholder_identity()
     parser = argparse.ArgumentParser(
         description="SEC EDGAR filing scanner — search for catalytic keywords"
     )

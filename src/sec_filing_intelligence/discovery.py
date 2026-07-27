@@ -37,6 +37,7 @@ from .config import (
     DISCOVERY_HISTORY_NEW_TICKER_BONUS,
     DISCOVERY_INSIDER_CLUSTER_MIN,
     DISCOVERY_INSIDER_CLUSTER_VALUE_MIN,
+    DISCOVERY_INSIDER_WINDOW_DAYS,
     DISCOVERY_KEYWORD_MOAT_MAP,
     DISCOVERY_LOW_ANALYST_BONUS,
     DISCOVERY_MAX_ANALYST_COUNT,
@@ -488,7 +489,7 @@ def search_layer_2c(scan_date: str) -> list[dict]:
               AND it.transaction_type = 'purchase'
               AND it.is_open_market = 1
               AND it.total_value >= ?
-              AND it.transaction_date >= date(?, '-90 days')
+              AND it.transaction_date >= date(?, '-{DISCOVERY_INSIDER_WINDOW_DAYS} days')
             GROUP BY it.ticker
             HAVING buyer_count >= ?
             """,
@@ -540,7 +541,9 @@ def search_layer_2c(scan_date: str) -> list[dict]:
               AND f.revenue_ttm < ?
               AND f.revenue_growth_yoy > ?
             """,
-            (DISCOVERY_MAX_REVENUE_M * 1_000_000, DISCOVERY_MIN_REVENUE_GROWTH_PCT),
+            # revenue_growth_yoy is stored as a FRACTION (0.45 = 45%); the config
+            # threshold is a percent. Without /100 this filter demanded >3000% growth.
+            (DISCOVERY_MAX_REVENUE_M * 1_000_000, DISCOVERY_MIN_REVENUE_GROWTH_PCT / 100.0),
         ).fetchall()
         for r in rows:
             signals.append({
@@ -548,7 +551,7 @@ def search_layer_2c(scan_date: str) -> list[dict]:
                 "signal_type": "small_growing",
                 "evidence": (
                     f"revenue_ttm={r['revenue_ttm']:.0f},"
-                    f"growth_yoy={r['revenue_growth_yoy']:.1f}%"
+                    f"growth_yoy={r['revenue_growth_yoy'] * 100:.1f}%"
                 ),
                 "company_name": r["company_name"] or "",
             })
@@ -1313,6 +1316,32 @@ def _enrich_customer_mentions(
 # ── Phase 5b: 10-K context analysis ──────────────────────────────────────────
 
 
+def _pick_document_href(index_html: str) -> str | None:
+    """Pick the primary filing document href from an EDGAR filing index page.
+
+    EDGAR index pages open with site-navigation links (`/index.htm`,
+    `/cgi-bin/browse-edgar...`) — naively taking the first .htm href matched
+    the masthead link and 404'd every fetch, leaving Phase 5b dead. Real
+    documents are relative filenames within the filing's Archives directory,
+    or inline-XBRL viewer links wrapping them (`/ix?doc=/Archives/...`).
+    """
+    link_re = re.compile(r'href="([^"]+\.htm)"', re.IGNORECASE)
+    for match in link_re.finditer(index_html):
+        href = match.group(1)
+        lower = href.lower()
+        if "-index.htm" in lower or lower.endswith(".xml"):
+            continue
+        if "/ix?doc=" in lower:
+            # Unwrap the inline-XBRL viewer to the underlying document path
+            return href.split("doc=", 1)[1]
+        if lower.startswith("http") and "sec.gov" not in lower.split("/", 3)[2]:
+            continue  # never follow off-site absolute links from page content
+        if lower.startswith("/") and "/archives/" not in lower:
+            continue  # site-nav link (masthead /index.htm etc.)
+        return href
+    return None
+
+
 @rate_limiter(EDGAR_RATE_LIMIT_RPS)
 def _fetch_10k_text(filing_url: str) -> str | None:
     """Download the actual 10-K document text from an EDGAR filing index URL.
@@ -1332,21 +1361,15 @@ def _fetch_10k_text(filing_url: str) -> str | None:
             return None
         index_html = resp.text
         base_url = filing_url.rsplit("/", 1)[0]
-        link_re = re.compile(r'href="([^"]+\.htm)"', re.IGNORECASE)
-        candidates = []
-        for match in link_re.finditer(index_html):
-            href = match.group(1)
-            if "-index.htm" in href.lower():
-                continue
-            if href.lower().endswith(".xml"):
-                continue
-            candidates.append(href)
-        if not candidates:
+        doc_href = _pick_document_href(index_html)
+        if not doc_href:
             logger.debug("No .htm document links found in %s", filing_url)
             return None
-        doc_href = candidates[0]
         if doc_href.startswith("http"):
             doc_url = doc_href
+        elif doc_href.startswith("/"):
+            # Root-relative Archives path — joining onto base_url would double the path
+            doc_url = f"https://www.sec.gov{doc_href}"
         else:
             doc_url = f"{base_url}/{doc_href}"
         doc_resp = requests.get(doc_url, headers=_headers, timeout=30)
@@ -1727,9 +1750,12 @@ def _compute_diamond_score(flags: dict[str, dict]) -> dict[str, dict]:
         shares_growth = rec.get("shares_growth")
         mcap = rec.get("market_cap")
         rev = rec.get("revenue")
+        # Require CONFIRMED tiny revenue: most DB-sourced candidates have rev=None
+        # (only yfinance-enriched ones carry it), and `rev is None or` was hitting
+        # exactly the sub-$50M deep-crash profile this score exists to surface.
         if (d_crash >= 5
                 and (mcap is not None and mcap < 50_000_000)
-                and (rev is None or rev < 20_000_000)):
+                and (rev is not None and rev < 20_000_000)):
             raw_diamond -= 10
 
         # Insider cluster selling penalty: 3+ insiders sold recently.
@@ -1787,7 +1813,11 @@ def _store_history_snapshot(flags: dict[str, dict], scan_date: str) -> int:
                 (
                     ticker,
                     scan_date,
-                    rec.get("composite_score", 0),
+                    # Store the INTRINSIC score: the new-ticker bonus is a transient
+                    # ranking boost for this week's report. Persisting it inflated
+                    # next week's delta by exactly the bonus for every ex-new ticker.
+                    rec.get("composite_score", 0)
+                    - (DISCOVERY_HISTORY_NEW_TICKER_BONUS if rec.get("is_new_ticker") else 0),
                     rec.get("flag_count", 0),
                     rec.get("moat_type_count", 0),
                     rec.get("sector", "unknown"),
@@ -2016,8 +2046,8 @@ def _store_discovery_flags(flags: dict[str, dict], scan_date: str) -> int:
                     self_claim_count, risk_factor_count, keyword_contexts,
                     diamond_score, diamond_crash, diamond_undiscovered,
                     diamond_growth, diamond_balance, diamond_moat,
-                    fresh_crash, pct_1m_change)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    fresh_crash, pct_1m_change, rank)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     ticker,
                     scan_date,
@@ -2058,6 +2088,7 @@ def _store_discovery_flags(flags: dict[str, dict], scan_date: str) -> int:
                     rec.get("diamond_moat", 0),
                     1 if rec.get("fresh_crash") else 0,
                     rec.get("pct_1m_change"),
+                    rec.get("rank"),
                 ),
             )
             written += 1
@@ -2589,6 +2620,9 @@ def _get_forward_rows_for_merge() -> list[dict]:
 
 def main():
     """CLI entry point for the discovery pipeline."""
+    from .config import warn_if_placeholder_identity
+
+    warn_if_placeholder_identity()
     parser = argparse.ArgumentParser(
         description="Multibagger Discovery Pipeline — SEC 10-K full-text search + structural signals"
     )

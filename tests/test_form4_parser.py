@@ -1,4 +1,4 @@
-"""Tests for scripts/screener/form4_parser.py — XML parsing + CIK resolution."""
+"""Tests for sec_filing_intelligence.form4_parser — XML parsing + CIK resolution."""
 
 from pathlib import Path
 import xml.etree.ElementTree as ET

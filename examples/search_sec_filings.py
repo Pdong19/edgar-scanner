@@ -3,15 +3,15 @@
 
 Usage:
     python examples/search_sec_filings.py "sole source"
-    python examples/search_sec_filings.py "proprietary technology" --form 10-K
+    python examples/search_sec_filings.py "proprietary technology" --form 10-K --limit 20
 
 Demonstrates the EFTS (EDGAR Full-Text Search) API integration
-that powers the discovery pipeline.
+that powers the discovery pipeline. Needs no database — just network.
 """
 
 import argparse
-import json
 
+from sec_filing_intelligence.config import warn_if_placeholder_identity
 from sec_filing_intelligence.filing_scanner import efts_search
 
 
@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--limit", type=int, default=10, help="Max results (default: 10)")
     args = parser.parse_args()
 
+    warn_if_placeholder_identity()
     print(f"Searching SEC EDGAR for '{args.keyword}' in {args.form} filings...\n")
 
     results = efts_search(

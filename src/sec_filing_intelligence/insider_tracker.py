@@ -276,7 +276,7 @@ def store_transactions(transactions: list[dict]) -> int:
                     f"""INSERT OR IGNORE INTO {TABLE_INSIDER_TRANSACTIONS}
                         (ticker, filing_date, transaction_date, insider_name, insider_title,
                          transaction_type, shares, price_per_share, total_value,
-                         shares_owned_after, is_open_market, sec_url, accession_number)
+                         ownership_after, is_open_market, source_url, accession_number)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         txn["ticker"],
@@ -586,6 +586,9 @@ def list_recent_buyers() -> list[dict]:
 
 
 def main():
+    from .config import warn_if_placeholder_identity
+
+    warn_if_placeholder_identity()
     parser = argparse.ArgumentParser(
         description="SEC Form 4 insider transaction tracker"
     )

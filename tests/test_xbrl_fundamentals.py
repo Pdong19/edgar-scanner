@@ -1,4 +1,4 @@
-"""Tests for scripts/screener/xbrl_fundamentals.py — EDGAR XBRL extractor.
+"""Tests for sec_filing_intelligence.xbrl_fundamentals — EDGAR XBRL extractor.
 
 All tests mock `edgartools` responses; we never hit the live SEC API. Reference
 fixtures captured during recon (2026-04-14) and pinned in the plan doc.
@@ -456,7 +456,11 @@ def test_extract_returns_none_when_no_cik(monkeypatch):
 
 
 def test_extract_positive_cashflow_skips_runway(monkeypatch):
-    """Positive operating cash flow → cash_runway_quarters is None + flag."""
+    """Positive operating cash flow → runway reported at the cap + flag.
+
+    Previously None, which the scorer's `or 0` turned into 0 quarters — ranking
+    cash-generative companies BELOW cash burners on the RUNWAY dimension.
+    """
     facts = _make_facts(
         concept_values={
             "cash_and_equivalents": 50_000_000.0,
@@ -481,7 +485,7 @@ def test_extract_positive_cashflow_skips_runway(monkeypatch):
     assert row is not None
     flags = json.loads(row["data_quality_flags"])
     assert "positive_cashflow" in flags
-    assert row["cash_runway_quarters"] is None
+    assert row["cash_runway_quarters"] == 40.0  # XBRL_RUNWAY_CAP_QUARTERS
     assert row["quarterly_burn"] is None
     # FCF still computes
     assert row["free_cash_flow"] == 9_000_000.0

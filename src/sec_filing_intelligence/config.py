@@ -3,13 +3,20 @@
 import os
 from pathlib import Path
 
-# ── Repo root (3 levels up from scripts/screener/config.py) ─────────────────
+from dotenv import load_dotenv
+
+# ── Repo root (3 levels up from src/sec_filing_intelligence/config.py) ──────
 REPO_ROOT = Path(__file__).parent.parent.parent
+
+# Read .env (Quick Start: `cp .env.example .env`). Existing env vars win; the
+# second call covers editable installs invoked from outside the repo root.
+load_dotenv()
+load_dotenv(REPO_ROOT / ".env")
 
 # ── Database ──────────────────────────────────────────────────────────────────
 DB_PATH = Path(os.environ.get("SFI_DB_PATH", str(Path(__file__).parent.parent.parent / "data" / "sec_filings.db")))
 
-# ── Screener table names (all scr_ prefixed, 23 total) ───────────────────────
+# ── Screener table names (all scr_ prefixed) ─────────────────────────────────
 TABLE_UNIVERSE = "scr_universe"
 TABLE_FUNDAMENTALS = "scr_fundamentals"
 TABLE_PRICE_METRICS = "scr_price_metrics"
@@ -43,9 +50,34 @@ EDGAR_BASE_URL = "https://efts.sec.gov/LATEST"
 EDGAR_SUBMISSIONS_URL = "https://data.sec.gov/submissions"
 EDGAR_FILINGS_URL = "https://www.sec.gov/cgi-bin/browse-edgar"
 EDGAR_FULL_TEXT_SEARCH_URL = f"{EDGAR_BASE_URL}/search-index"
-EDGAR_RATE_LIMIT_RPS = 10  # SEC fair access: max 10 requests/second
-EDGAR_USER_AGENT = os.environ.get("EDGAR_USER_AGENT", "SECFilingIntelligence research@example.com")
+EDGAR_RATE_LIMIT_RPS = 5  # SEC fair access caps at 10 req/s; run at half for headroom
+_PLACEHOLDER_IDENTITY = "SECFilingIntelligence research@example.com"
+EDGAR_USER_AGENT = os.environ.get("EDGAR_USER_AGENT", _PLACEHOLDER_IDENTITY)
 EDGAR_REQUEST_TIMEOUT = 30  # seconds
+
+
+def identity_is_placeholder() -> bool:
+    """True when EDGAR_USER_AGENT still carries the shipped placeholder contact."""
+    return "example.com" in EDGAR_USER_AGENT
+
+
+def warn_if_placeholder_identity() -> bool:
+    """Print a loud warning when SEC requests would go out without real contact info.
+
+    SEC's fair-access policy requires a User-Agent with a real contact address and
+    enforces it with 403s/IP blocks. Returns True when the placeholder is active.
+    """
+    if identity_is_placeholder():
+        import sys
+
+        print(
+            "WARNING: EDGAR_USER_AGENT is not set — SEC requests will carry a fake "
+            "placeholder contact, which violates SEC's fair-access policy and can get "
+            "your IP blocked. Set it in .env (see .env.example) before scanning.",
+            file=sys.stderr,
+        )
+        return True
+    return False
 
 # ── Insider Tracking ──────────────────────────────────────────────────────────
 INSIDER_LOOKBACK_DAYS = 180  # Look back 6 months for insider transactions
@@ -704,7 +736,7 @@ FORWARD_MOAT_SCAN_TOP_N = 500
 FORWARD_MOAT_DEEPDIVE_TOP_N = 50
 FORWARD_MOAT_MIN_SCORE_DEEPDIVE = 15
 FORWARD_MOAT_MIN_SIGNAL_SCORE = 4
-FORWARD_MOAT_OUTPUT_DIR = REPO_ROOT / "output" / "discovery"
+FORWARD_MOAT_OUTPUT_DIR = REPO_ROOT / "output" / "forward_moat"
 # Configure output limits via CLI flags
 
 # Backlog signal
